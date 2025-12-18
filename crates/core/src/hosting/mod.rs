@@ -3,6 +3,7 @@
 //! Hosting determines which member is responsible for coordinating
 //! Hall activities. This is state-only for now (no real networking).
 
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
@@ -53,6 +54,7 @@ impl HostingState {
     }
 
     /// Attempt to become host when entering an empty Hall
+    #[instrument(skip(self))]
     pub fn try_become_initial_host(&mut self, user_id: Uuid, role: HallRole) -> Result<bool> {
         if !role.can_host() {
             return Ok(false);
@@ -69,6 +71,7 @@ impl HostingState {
 
     /// Handle a user joining the Hall
     /// Returns a prompt if they should be offered host takeover
+    #[instrument(skip(self))]
     pub fn on_user_join(
         &self,
         joining_user: Uuid,
@@ -114,6 +117,7 @@ impl HostingState {
     }
 
     /// Transfer host to another user
+    #[instrument(skip(self))]
     pub fn transfer_host(&mut self, to_user_id: Uuid, epoch: u64) -> Result<()> {
         if epoch != self.election_epoch {
             return Err(Error::Hosting("Stale election epoch".into()));

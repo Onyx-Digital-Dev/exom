@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, role_from_u8, OptionalExt};
@@ -18,6 +19,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// Create a new message
+    #[instrument(skip(self, message), fields(hall_id = %message.hall_id, sender_id = %message.sender_id))]
     pub fn create(&self, message: &Message) -> Result<()> {
         self.conn.execute(
             "INSERT INTO messages (id, hall_id, sender_id, content, created_at, edited_at, is_deleted)
@@ -36,6 +38,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// Get message by ID
+    #[instrument(skip(self))]
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<Message>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, sender_id, content, created_at, edited_at, is_deleted
@@ -60,6 +63,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// List messages for a Hall with display info
+    #[instrument(skip(self))]
     pub fn list_for_hall(
         &self,
         hall_id: Uuid,
@@ -121,6 +125,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// Update message content
+    #[instrument(skip(self, new_content))]
     pub fn update_content(&self, message_id: Uuid, new_content: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE messages SET content = ?1, edited_at = ?2 WHERE id = ?3",
@@ -130,6 +135,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// Soft delete message
+    #[instrument(skip(self))]
     pub fn delete(&self, message_id: Uuid) -> Result<()> {
         self.conn.execute(
             "UPDATE messages SET is_deleted = 1 WHERE id = ?1",
@@ -139,6 +145,7 @@ impl<'a> MessageStore<'a> {
     }
 
     /// Get message count for Hall
+    #[instrument(skip(self))]
     pub fn count_for_hall(&self, hall_id: Uuid) -> Result<u64> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM messages WHERE hall_id = ?1 AND is_deleted = 0",

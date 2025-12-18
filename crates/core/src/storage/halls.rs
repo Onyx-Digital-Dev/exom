@@ -1,6 +1,7 @@
 //! Hall storage operations
 
 use rusqlite::{params, Connection};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::parse::{
@@ -19,6 +20,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Create a new Hall
+    #[instrument(skip(self, hall), fields(hall_name = %hall.name))]
     pub fn create(&self, hall: &Hall) -> Result<()> {
         self.conn.execute(
             "INSERT INTO halls (id, name, description, owner_id, created_at, active_parlor, current_host_id, election_epoch)
@@ -38,6 +40,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Find Hall by ID
+    #[instrument(skip(self))]
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<Hall>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, owner_id, created_at, active_parlor, current_host_id, election_epoch
@@ -63,6 +66,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Update Hall
+    #[instrument(skip(self, hall), fields(hall_id = %hall.id))]
     pub fn update(&self, hall: &Hall) -> Result<()> {
         self.conn.execute(
             "UPDATE halls SET name = ?1, description = ?2, active_parlor = ?3, current_host_id = ?4, election_epoch = ?5
@@ -80,6 +84,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Delete Hall
+    #[instrument(skip(self))]
     pub fn delete(&self, hall_id: Uuid) -> Result<()> {
         self.conn.execute(
             "DELETE FROM halls WHERE id = ?1",
@@ -89,6 +94,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// List all Halls for a user
+    #[instrument(skip(self))]
     pub fn list_for_user(&self, user_id: Uuid) -> Result<Vec<Hall>> {
         let mut stmt = self.conn.prepare(
             "SELECT h.id, h.name, h.description, h.owner_id, h.created_at, h.active_parlor, h.current_host_id, h.election_epoch
@@ -117,6 +123,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Add membership
+    #[instrument(skip(self, membership), fields(user_id = %membership.user_id, hall_id = %membership.hall_id, role = ?membership.role))]
     pub fn add_member(&self, membership: &Membership) -> Result<()> {
         self.conn.execute(
             "INSERT INTO memberships (id, user_id, hall_id, role, joined_at, is_online)
@@ -134,6 +141,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Get membership
+    #[instrument(skip(self))]
     pub fn get_membership(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<Membership>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, user_id, hall_id, role, joined_at, is_online FROM memberships
@@ -157,6 +165,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Update membership role
+    #[instrument(skip(self))]
     pub fn update_role(&self, user_id: Uuid, hall_id: Uuid, new_role: HallRole) -> Result<()> {
         self.conn.execute(
             "UPDATE memberships SET role = ?1 WHERE user_id = ?2 AND hall_id = ?3",
@@ -166,6 +175,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Update online status
+    #[instrument(skip(self))]
     pub fn update_online_status(
         &self,
         user_id: Uuid,
@@ -180,6 +190,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Remove membership
+    #[instrument(skip(self))]
     pub fn remove_member(&self, user_id: Uuid, hall_id: Uuid) -> Result<()> {
         self.conn.execute(
             "DELETE FROM memberships WHERE user_id = ?1 AND hall_id = ?2",
@@ -189,6 +200,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// List members of a Hall with user info
+    #[instrument(skip(self))]
     pub fn list_members(&self, hall_id: Uuid) -> Result<Vec<MemberInfo>> {
         let mut stmt = self.conn.prepare(
             "SELECT u.id, u.username, m.role, m.is_online, h.current_host_id
@@ -218,6 +230,7 @@ impl<'a> HallStore<'a> {
     }
 
     /// Get user's role in a Hall
+    #[instrument(skip(self))]
     pub fn get_user_role(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<HallRole>> {
         let membership = self.get_membership(user_id, hall_id)?;
         Ok(membership.map(|m| m.role))

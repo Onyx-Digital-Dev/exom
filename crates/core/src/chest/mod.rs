@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
@@ -83,6 +84,7 @@ impl HallChest {
 
     /// Initialize chest folders for a Hall
     /// Called when user joins as Agent or higher
+    #[instrument(skip(self, hall_name))]
     pub fn init_hall_chest(
         &self,
         hall_id: Uuid,
@@ -133,6 +135,7 @@ impl HallChest {
     }
 
     /// List files in a Hall chest directory
+    #[instrument(skip(self))]
     pub fn list_files(&self, hall_id: Uuid, subpath: Option<&str>) -> Result<Vec<ChestEntry>> {
         let mut path = self.hall_path(hall_id);
         if let Some(sub) = subpath {
@@ -197,6 +200,7 @@ impl HallChest {
     }
 
     /// Delete a Hall's chest (called when leaving or Hall is deleted)
+    #[instrument(skip(self))]
     pub fn delete_chest(&self, hall_id: Uuid) -> Result<()> {
         let path = self.hall_path(hall_id);
         if path.exists() {

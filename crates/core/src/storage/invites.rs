@@ -1,6 +1,7 @@
 //! Invite storage operations
 
 use rusqlite::{params, Connection};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, role_from_u8, OptionalExt};
@@ -17,6 +18,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// Create a new invite
+    #[instrument(skip(self, invite), fields(hall_id = %invite.hall_id, role = ?invite.role))]
     pub fn create(&self, invite: &Invite) -> Result<()> {
         self.conn.execute(
             "INSERT INTO invites (id, hall_id, token, created_by, role, created_at, expires_at, max_uses, use_count, is_revoked)
@@ -38,6 +40,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// Find invite by token
+    #[instrument(skip(self, token))]
     pub fn find_by_token(&self, token: &str) -> Result<Option<Invite>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, token, created_by, role, created_at, expires_at, max_uses, use_count, is_revoked
@@ -65,6 +68,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// List invites for a Hall
+    #[instrument(skip(self))]
     pub fn list_for_hall(&self, hall_id: Uuid) -> Result<Vec<Invite>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, token, created_by, role, created_at, expires_at, max_uses, use_count, is_revoked
@@ -92,6 +96,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// Increment use count
+    #[instrument(skip(self))]
     pub fn increment_use_count(&self, invite_id: Uuid) -> Result<()> {
         self.conn.execute(
             "UPDATE invites SET use_count = use_count + 1 WHERE id = ?1",
@@ -101,6 +106,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// Revoke invite
+    #[instrument(skip(self))]
     pub fn revoke(&self, invite_id: Uuid) -> Result<()> {
         self.conn.execute(
             "UPDATE invites SET is_revoked = 1 WHERE id = ?1",
@@ -110,6 +116,7 @@ impl<'a> InviteStore<'a> {
     }
 
     /// Delete invite
+    #[instrument(skip(self))]
     pub fn delete(&self, invite_id: Uuid) -> Result<()> {
         self.conn.execute(
             "DELETE FROM invites WHERE id = ?1",

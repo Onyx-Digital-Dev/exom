@@ -2,6 +2,7 @@
 
 use chrono::Utc;
 use rusqlite::{params, Connection};
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, OptionalExt};
@@ -18,6 +19,7 @@ impl<'a> UserStore<'a> {
     }
 
     /// Create a new user
+    #[instrument(skip(self, user), fields(username = %user.username))]
     pub fn create(&self, user: &User) -> Result<()> {
         self.conn.execute(
             "INSERT INTO users (id, username, password_hash, created_at, last_login) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -33,6 +35,7 @@ impl<'a> UserStore<'a> {
     }
 
     /// Find user by ID
+    #[instrument(skip(self))]
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, username, password_hash, created_at, last_login FROM users WHERE id = ?1",
@@ -54,6 +57,7 @@ impl<'a> UserStore<'a> {
     }
 
     /// Find user by username
+    #[instrument(skip(self))]
     pub fn find_by_username(&self, username: &str) -> Result<Option<User>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, username, password_hash, created_at, last_login FROM users WHERE username = ?1",
@@ -84,6 +88,7 @@ impl<'a> UserStore<'a> {
     }
 
     /// Create a session
+    #[instrument(skip(self, session), fields(user_id = %session.user_id))]
     pub fn create_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
             "INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
@@ -98,6 +103,7 @@ impl<'a> UserStore<'a> {
     }
 
     /// Find valid session
+    #[instrument(skip(self))]
     pub fn find_valid_session(&self, session_id: Uuid) -> Result<Option<Session>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ?1 AND expires_at > ?2",
