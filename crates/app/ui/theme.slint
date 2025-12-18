@@ -1,44 +1,89 @@
 // Exom Theme - Professional, minimal, dark
+//
+// Design principles:
+// - Near-black background for reduced eye strain
+// - Slate blue accent for subtle visual interest
+// - High contrast white text on dark surfaces
+// - Light blue borders and focus indicators
+// - Flat surfaces with hairline borders
 
 export global Theme {
-    // Core colors
-    out property <color> background: #0e1116;
-    out property <color> surface: #161b22;
-    out property <color> surface-elevated: #1c2129;
+    // Background colors (near-black palette)
+    out property <color> color-bg: #0d1117;
+    out property <color> color-panel: #161b22;
+    out property <color> color-panel-elevated: #1c2129;
+    out property <color> color-panel-hover: #21262d;
 
-    // Accent colors
-    out property <color> accent: #5a7da8;
-    out property <color> accent-muted: #3d556e;
-    out property <color> border: #3a5070;
-    out property <color> border-subtle: #2a3a4a;
+    // Border colors (light blue, subtle)
+    out property <color> color-border: #3a5070;
+    out property <color> color-border-subtle: #2a3a4a;
+    out property <color> color-border-focus: #5a8cc0;
 
     // Text colors
-    out property <color> text-primary: #e6edf3;
-    out property <color> text-secondary: #8b949e;
-    out property <color> text-muted: #6e7681;
+    out property <color> color-text: #e6edf3;
+    out property <color> color-text-muted: #8b949e;
+    out property <color> color-text-dim: #6e7681;
+
+    // Accent colors (slate blue)
+    out property <color> color-accent: #5a7da8;
+    out property <color> color-accent-muted: #3d556e;
+    out property <color> color-accent-hover: #6a8db8;
 
     // Status colors
-    out property <color> online: #3fb950;
-    out property <color> offline: #6e7681;
-    out property <color> error: #f85149;
-    out property <color> warning: #d29922;
+    out property <color> color-online: #3fb950;
+    out property <color> color-offline: #6e7681;
+    out property <color> color-error: #f85149;
+    out property <color> color-warning: #d29922;
 
-    // Dimensions
-    out property <length> border-width: 1px;
-    out property <length> spacing-xs: 4px;
-    out property <length> spacing-sm: 8px;
-    out property <length> spacing-md: 12px;
-    out property <length> spacing-lg: 16px;
-    out property <length> spacing-xl: 24px;
+    // Border radius
+    out property <length> radius-sm: 2px;
+    out property <length> radius-md: 4px;
+    out property <length> radius-lg: 6px;
 
-    // Panel widths
-    out property <length> left-panel-width: 220px;
-    out property <length> right-panel-width: 240px;
+    // Padding/spacing
+    out property <length> pad-xs: 4px;
+    out property <length> pad-sm: 8px;
+    out property <length> pad-md: 12px;
+    out property <length> pad-lg: 16px;
+    out property <length> pad-xl: 24px;
 
     // Font sizes
-    out property <length> font-xs: 11px;
-    out property <length> font-sm: 12px;
-    out property <length> font-md: 13px;
-    out property <length> font-lg: 15px;
-    out property <length> font-xl: 18px;
+    out property <length> text-xs: 10px;
+    out property <length> text-sm: 12px;
+    out property <length> text-md: 13px;
+    out property <length> text-lg: 15px;
+    out property <length> text-xl: 18px;
+
+    // Layout dimensions
+    out property <length> border-width: 1px;
+    out property <length> left-panel-width: 220px;
+    out property <length> right-panel-width: 240px;
+    out property <length> input-height: 32px;
+    out property <length> button-height: 32px;
+
+    // Legacy aliases (for backward compatibility during migration)
+    out property <color> background: color-bg;
+    out property <color> surface: color-panel;
+    out property <color> surface-elevated: color-panel-elevated;
+    out property <color> accent: color-accent;
+    out property <color> accent-muted: color-accent-muted;
+    out property <color> border: color-border;
+    out property <color> border-subtle: color-border-subtle;
+    out property <color> text-primary: color-text;
+    out property <color> text-secondary: color-text-muted;
+    out property <color> text-muted: color-text-dim;
+    out property <color> online: color-online;
+    out property <color> offline: color-offline;
+    out property <color> error: color-error;
+    out property <color> warning: color-warning;
+    out property <length> spacing-xs: pad-xs;
+    out property <length> spacing-sm: pad-sm;
+    out property <length> spacing-md: pad-md;
+    out property <length> spacing-lg: pad-lg;
+    out property <length> spacing-xl: pad-xl;
+    out property <length> font-xs: text-xs;
+    out property <length> font-sm: text-sm;
+    out property <length> font-md: text-md;
+    out property <length> font-lg: text-lg;
+    out property <length> font-xl: text-xl;
 }

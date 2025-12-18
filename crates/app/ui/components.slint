@@ -1,56 +1,130 @@
 // Reusable UI components
+// Consistent sizing, states (hover/focus/disabled), flat surfaces, hairline borders
 
 import { Theme } from "theme.slint";
 
+// Divider (hairline, light blue) - defined first for use in other components
+export component Divider inherits Rectangle {
+    background: Theme.color-border-subtle;
+    height: 1px;
+}
+
+// Separator line (legacy alias)
+export component Separator inherits Rectangle {
+    background: Theme.color-border-subtle;
+    height: 1px;
+}
+
+// Vertical separator
+export component VerticalSeparator inherits Rectangle {
+    background: Theme.color-border;
+    width: 1px;
+}
+
 // Text input field
-export component TextInput inherits Rectangle {
+export component TextField inherits Rectangle {
     in property <string> placeholder;
     in-out property <string> text;
-    in property <bool> password;
+    in property <bool> enabled: true;
+    out property <bool> has-focus: input.has-focus;
+
+    callback accepted();
+    callback edited();
+
+    background: Theme.color-panel;
+    border-color: root.has-focus ? Theme.color-border-focus : Theme.color-border-subtle;
+    border-width: Theme.border-width;
+    border-radius: Theme.radius-sm;
+    height: Theme.input-height;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    input := TextInput {
+        x: Theme.pad-sm;
+        width: parent.width - Theme.pad-md;
+        height: parent.height;
+        color: Theme.color-text;
+        font-size: Theme.text-md;
+        text <=> root.text;
+        enabled: root.enabled;
+
+        accepted => { root.accepted(); }
+        edited => { root.edited(); }
+    }
+
+    placeholder-text := Text {
+        x: Theme.pad-sm;
+        text: root.placeholder;
+        color: Theme.color-text-dim;
+        font-size: Theme.text-md;
+        vertical-alignment: center;
+        visible: input.text == "";
+    }
+
+    public function set-focus() {
+        input.focus();
+    }
+
+    public function clear() {
+        root.text = "";
+    }
+}
+
+// Password input field
+export component PasswordField inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <bool> enabled: true;
+    out property <bool> has-focus: input.has-focus;
 
     callback accepted();
 
-    background: Theme.surface;
-    border-color: Theme.border-subtle;
+    background: Theme.color-panel;
+    border-color: root.has-focus ? Theme.color-border-focus : Theme.color-border-subtle;
     border-width: Theme.border-width;
-    height: 32px;
+    border-radius: Theme.radius-sm;
+    height: Theme.input-height;
+    opacity: root.enabled ? 1.0 : 0.5;
 
     input := TextInput {
-        x: Theme.spacing-sm;
-        width: parent.width - Theme.spacing-md;
+        x: Theme.pad-sm;
+        width: parent.width - Theme.pad-md;
         height: parent.height;
-        color: Theme.text-primary;
-        font-size: Theme.font-md;
+        color: Theme.color-text;
+        font-size: Theme.text-md;
         text <=> root.text;
-        input-type: root.password ? InputType.password : InputType.text;
+        input-type: InputType.password;
+        enabled: root.enabled;
 
         accepted => { root.accepted(); }
     }
 
     placeholder-text := Text {
-        x: Theme.spacing-sm;
+        x: Theme.pad-sm;
         text: root.placeholder;
-        color: Theme.text-muted;
-        font-size: Theme.font-md;
+        color: Theme.color-text-dim;
+        font-size: Theme.text-md;
         vertical-alignment: center;
         visible: input.text == "";
     }
+
+    public function set-focus() {
+        input.focus();
+    }
 }
 
-// Button
-export component Button inherits Rectangle {
+// Primary button (filled accent)
+export component PrimaryButton inherits Rectangle {
     in property <string> label;
-    in property <bool> primary: false;
     in property <bool> enabled: true;
 
     callback clicked();
 
-    background: root.primary ? Theme.accent : Theme.surface;
-    border-color: root.primary ? Theme.accent : Theme.border;
+    background: touch.has-hover && root.enabled ? Theme.color-accent-hover : Theme.color-accent;
+    border-color: Theme.color-accent;
     border-width: Theme.border-width;
-    height: 32px;
+    border-radius: Theme.radius-sm;
+    height: Theme.button-height;
     min-width: 80px;
-
     opacity: root.enabled ? 1.0 : 0.5;
 
     touch := TouchArea {
@@ -60,33 +134,251 @@ export component Button inherits Rectangle {
 
     Text {
         text: root.label;
-        color: root.primary ? Theme.background : Theme.text-primary;
-        font-size: Theme.font-md;
+        color: Theme.color-bg;
+        font-size: Theme.text-md;
+        font-weight: 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Secondary button (outlined)
+export component SecondaryButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    background: touch.has-hover && root.enabled ? Theme.color-panel-hover : Theme.color-panel;
+    border-color: Theme.color-border;
+    border-width: Theme.border-width;
+    border-radius: Theme.radius-sm;
+    height: Theme.button-height;
+    min-width: 80px;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: Theme.color-text;
+        font-size: Theme.text-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Danger button (for destructive actions, still restrained)
+export component DangerButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    background: touch.has-hover && root.enabled ? #3d2020 : Theme.color-panel;
+    border-color: Theme.color-error;
+    border-width: Theme.border-width;
+    border-radius: Theme.radius-sm;
+    height: Theme.button-height;
+    min-width: 80px;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: Theme.color-error;
+        font-size: Theme.text-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Legacy Button (for backward compatibility)
+export component Button inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    background: root.primary ? Theme.color-accent : Theme.color-panel;
+    border-color: root.primary ? Theme.color-accent : Theme.color-border;
+    border-width: Theme.border-width;
+    border-radius: Theme.radius-sm;
+    height: Theme.button-height;
+    min-width: 80px;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: root.primary ? Theme.color-bg : Theme.color-text;
+        font-size: Theme.text-md;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
 
     states [
         hover when touch.has-hover && root.enabled: {
-            background: root.primary ? Theme.accent-muted : Theme.surface-elevated;
+            background: root.primary ? Theme.color-accent-hover : Theme.color-panel-hover;
         }
     ]
+}
+
+// Legacy TextInput (for backward compatibility)
+export component TextInput inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <bool> password;
+
+    callback accepted();
+
+    background: Theme.color-panel;
+    border-color: Theme.color-border-subtle;
+    border-width: Theme.border-width;
+    height: Theme.input-height;
+
+    input := TextInput {
+        x: Theme.pad-sm;
+        width: parent.width - Theme.pad-md;
+        height: parent.height;
+        color: Theme.color-text;
+        font-size: Theme.text-md;
+        text <=> root.text;
+        input-type: root.password ? InputType.password : InputType.text;
+
+        accepted => { root.accepted(); }
+    }
+
+    placeholder-text := Text {
+        x: Theme.pad-sm;
+        text: root.placeholder;
+        color: Theme.color-text-dim;
+        font-size: Theme.text-md;
+        vertical-alignment: center;
+        visible: input.text == "";
+    }
+
+    public function set-focus() {
+        input.focus();
+    }
+
+    public function clear() {
+        root.text = "";
+    }
+}
+
+// Modal shell (overlay container with title and close behavior)
+export component ModalShell inherits Rectangle {
+    in property <string> title;
+    in property <bool> show: true;
+
+    callback close-requested();
+
+    background: root.show ? #00000080 : transparent;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        visible: root.show;
+
+        // Backdrop click to close
+        TouchArea {
+            clicked => { root.close-requested(); }
+        }
+
+        // Modal container
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 400px;
+            min-height: 200px;
+            background: Theme.color-panel;
+            border-color: Theme.color-border;
+            border-width: Theme.border-width;
+            border-radius: Theme.radius-md;
+
+            // Prevent backdrop click from closing when clicking modal
+            TouchArea {}
+
+            VerticalLayout {
+                padding: 0;
+
+                // Header
+                Rectangle {
+                    height: 44px;
+                    background: Theme.color-panel-elevated;
+                    border-radius: Theme.radius-md;
+
+                    HorizontalLayout {
+                        padding-left: Theme.pad-md;
+                        padding-right: Theme.pad-sm;
+
+                        Text {
+                            text: root.title;
+                            color: Theme.color-text;
+                            font-size: Theme.text-lg;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        // Close button
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            background: close-touch.has-hover ? Theme.color-panel-hover : transparent;
+                            border-radius: Theme.radius-sm;
+
+                            close-touch := TouchArea {
+                                clicked => { root.close-requested(); }
+                            }
+
+                            Text {
+                                text: "X";
+                                color: Theme.color-text-muted;
+                                font-size: Theme.text-md;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Divider {}
+
+                // Content slot
+                @children
+            }
+        }
+    }
 }
 
 // Panel header
 export component PanelHeader inherits Rectangle {
     in property <string> title;
 
-    background: Theme.surface;
-    border-color: Theme.border-subtle;
+    background: Theme.color-panel;
+    border-color: Theme.color-border-subtle;
     border-width: Theme.border-width;
     height: 40px;
 
     Text {
-        x: Theme.spacing-md;
+        x: Theme.pad-md;
         text: root.title;
-        color: Theme.text-primary;
-        font-size: Theme.font-lg;
+        color: Theme.color-text;
+        font-size: Theme.text-lg;
         font-weight: 500;
         vertical-alignment: center;
     }
@@ -98,8 +390,9 @@ export component ListItem inherits Rectangle {
 
     callback clicked();
 
-    background: root.selected ? Theme.accent-muted : (touch.has-hover ? Theme.surface-elevated : transparent);
+    background: root.selected ? Theme.color-accent-muted : (touch.has-hover ? Theme.color-panel-hover : transparent);
     height: 36px;
+    border-radius: Theme.radius-sm;
 
     touch := TouchArea {
         clicked => { root.clicked(); }
@@ -113,49 +406,92 @@ export component OnlineIndicator inherits Rectangle {
     width: 8px;
     height: 8px;
     border-radius: 4px;
-    background: root.online ? Theme.online : Theme.offline;
+    background: root.online ? Theme.color-online : Theme.color-offline;
 }
 
-// Role badge
+// Role badge (subdued chip)
 export component RoleBadge inherits Rectangle {
     in property <string> role;
+    in property <bool> subtle: false;
 
-    background: Theme.surface-elevated;
-    border-color: Theme.border-subtle;
-    border-width: Theme.border-width;
+    background: root.subtle ? transparent : Theme.color-panel-elevated;
+    border-color: Theme.color-border-subtle;
+    border-width: root.subtle ? 0 : Theme.border-width;
+    border-radius: Theme.radius-sm;
     height: 18px;
-    min-width: 50px;
+    horizontal-stretch: 0;
 
-    Text {
-        text: root.role;
-        color: Theme.text-secondary;
-        font-size: Theme.font-xs;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: Theme.pad-xs;
+        padding-right: Theme.pad-xs;
+
+        Text {
+            text: root.role;
+            color: root.subtle ? Theme.color-text-dim : Theme.color-text-muted;
+            font-size: Theme.text-xs;
+            vertical-alignment: center;
+        }
     }
 }
 
-// Separator line
-export component Separator inherits Rectangle {
-    background: Theme.border-subtle;
-    height: 1px;
-}
+// Host indicator badge
+export component HostBadge inherits Rectangle {
+    background: transparent;
+    border-color: Theme.color-border-focus;
+    border-width: Theme.border-width;
+    border-radius: Theme.radius-sm;
+    height: 16px;
 
-// Vertical separator
-export component VerticalSeparator inherits Rectangle {
-    background: Theme.border;
-    width: 1px;
+    HorizontalLayout {
+        padding-left: Theme.pad-xs;
+        padding-right: Theme.pad-xs;
+
+        Text {
+            text: "HOST";
+            color: Theme.color-border-focus;
+            font-size: Theme.text-xs;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
 }
 
 // Error text
 export component ErrorText inherits Text {
-    color: Theme.error;
-    font-size: Theme.font-sm;
+    color: Theme.color-error;
+    font-size: Theme.text-sm;
     visible: self.text != "";
 }
 
 // Status text
 export component StatusText inherits Text {
-    color: Theme.text-muted;
-    font-size: Theme.font-xs;
+    color: Theme.color-text-dim;
+    font-size: Theme.text-xs;
+}
+
+// Empty state container
+export component EmptyState inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.pad-sm;
+
+        Text {
+            text: root.title;
+            color: Theme.color-text-muted;
+            font-size: Theme.text-lg;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.description;
+            color: Theme.color-text-dim;
+            font-size: Theme.text-sm;
+            horizontal-alignment: center;
+        }
+    }
 }
