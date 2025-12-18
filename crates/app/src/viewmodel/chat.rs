@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use chrono::{DateTime, Duration, Utc};
 use exom_core::Message;
 use slint::{ComponentHandle, ModelRc, VecModel};
 
@@ -29,11 +30,22 @@ pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
         let current_host = state_load.current_host_name();
 
         // Build message items with grouping
+        // Messages are grouped when same sender AND within 5 minutes
+        let group_threshold = Duration::minutes(5);
         let mut message_items: Vec<MessageItem> = Vec::with_capacity(messages.len());
         let mut prev_sender: Option<String> = None;
+        let mut prev_timestamp: Option<DateTime<Utc>> = None;
 
         for m in messages.iter() {
-            let is_group_start = prev_sender.as_ref() != Some(&m.sender_username);
+            // Start new group if different sender OR time gap > 5 minutes
+            let is_group_start = match (&prev_sender, prev_timestamp) {
+                (Some(sender), Some(ts)) => {
+                    sender != &m.sender_username
+                        || m.timestamp.signed_duration_since(ts) > group_threshold
+                }
+                _ => true,
+            };
+
             let is_host = current_host
                 .as_ref()
                 .map(|h| h == &m.sender_username)
@@ -51,6 +63,7 @@ pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
             });
 
             prev_sender = Some(m.sender_username.clone());
+            prev_timestamp = Some(m.timestamp);
         }
 
         drop(db);
