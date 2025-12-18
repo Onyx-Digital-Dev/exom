@@ -72,17 +72,30 @@ pub fn setup_network_bindings(
 
         // Copy to clipboard and set URL after releasing lock
         if let Some(url) = invite_url {
-            // Copy to clipboard
-            if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                if let Err(e) = clipboard.set_text(&url) {
-                    tracing::warn!(error = %e, "Failed to copy invite URL to clipboard");
-                } else {
-                    tracing::debug!("Invite URL copied to clipboard");
-                }
-            }
+            let copy_result = copy_to_clipboard(&url);
 
             if let Some(w) = window_weak.upgrade() {
                 w.set_invite_url(url.into());
+
+                if !copy_result {
+                    // Show failure for 3 seconds, then restore previous status
+                    let prev_status = w.get_network_status().to_string();
+                    w.set_network_status("Copy failed".into());
+
+                    let window_weak2 = w.as_weak();
+                    let timer = slint::Timer::default();
+                    timer.start(
+                        slint::TimerMode::SingleShot,
+                        std::time::Duration::from_secs(3),
+                        move || {
+                            if let Some(w2) = window_weak2.upgrade() {
+                                w2.set_network_status(prev_status.clone().into());
+                            }
+                        },
+                    );
+                    // Keep timer alive by forgetting it
+                    std::mem::forget(timer);
+                }
             }
         }
     });
@@ -325,4 +338,49 @@ pub fn try_auto_reconnect(state: Arc<AppState>, network_manager: Arc<Mutex<Netwo
                 .await;
         }
     });
+}
+
+/// Copy text to clipboard with fallback for Wayland.
+/// Returns true if successful, false if all methods failed.
+fn copy_to_clipboard(text: &str) -> bool {
+    // Try arboard first (works on X11 and some Wayland)
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        if clipboard.set_text(text).is_ok() {
+            tracing::debug!("Copied to clipboard via arboard");
+            return true;
+        }
+    }
+
+    // Fallback: try wl-copy for Wayland
+    if try_wl_copy(text) {
+        tracing::debug!("Copied to clipboard via wl-copy");
+        return true;
+    }
+
+    tracing::warn!("All clipboard methods failed");
+    false
+}
+
+/// Try to copy using wl-copy (Wayland clipboard tool).
+fn try_wl_copy(text: &str) -> bool {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = match Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return false,
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        if stdin.write_all(text.as_bytes()).is_err() {
+            return false;
+        }
+    }
+
+    matches!(child.wait(), Ok(status) if status.success())
 }
