@@ -39,6 +39,7 @@ impl Message {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageDisplay {
     pub id: Uuid,
+    pub sender_id: Uuid,
     pub sender_username: String,
     pub sender_role: HallRole,
     pub content: String,

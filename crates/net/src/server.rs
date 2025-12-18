@@ -337,6 +337,8 @@ async fn writer_task(mut writer: WriteHalf<TcpStream>, mut rx: mpsc::Receiver<Me
 async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<ServerState>>) {
     match msg {
         Message::Chat(mut chat_msg) => {
+            let message_id = chat_msg.id;
+
             // Assign sequence number and store in history
             let sequence = {
                 let mut s = state.write().await;
@@ -356,6 +358,12 @@ async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<Server
 
             // Broadcast to all peers including sender
             broadcast_to_peers(state, Message::Chat(chat_msg), None).await;
+
+            // Send acknowledgment back to sender
+            let s = state.read().await;
+            if let Some(peer) = s.peers.get(&sender_id) {
+                let _ = peer.tx.send(Message::MessageAck { message_id }).await;
+            }
         }
         Message::Ping => {
             // Send pong back to sender only

@@ -17,6 +17,7 @@ use crate::MessageItem;
 enum CombinedMessage {
     Chat {
         id: String,
+        sender_id: uuid::Uuid,
         sender_username: String,
         sender_role: String,
         content: String,
@@ -55,8 +56,9 @@ pub fn setup_chat_bindings(
         // Get system messages for this hall
         let system_messages = state_load.get_system_messages(hall_id);
 
-        // Get current host name for comparison
+        // Get current host name and user for comparison
         let current_host = state_load.current_host_name();
+        let current_user_id = state_load.current_user_id();
 
         // Combine and sort all messages by timestamp
         let mut combined: Vec<CombinedMessage> = Vec::new();
@@ -69,6 +71,7 @@ pub fn setup_chat_bindings(
 
             combined.push(CombinedMessage::Chat {
                 id: m.id.to_string(),
+                sender_id: m.sender_id,
                 sender_username: m.sender_username.clone(),
                 sender_role: m.sender_role.short_name().to_string(),
                 content: m.content.clone(),
@@ -110,6 +113,7 @@ pub fn setup_chat_bindings(
             match msg {
                 CombinedMessage::Chat {
                     id,
+                    sender_id,
                     sender_username,
                     sender_role,
                     content,
@@ -126,6 +130,18 @@ pub fn setup_chat_bindings(
                         _ => true,
                     };
 
+                    // Check if this is our own message
+                    let is_own = current_user_id
+                        .map(|uid| uid == *sender_id)
+                        .unwrap_or(false);
+
+                    // Check if message is pending delivery (only for own messages)
+                    let message_uuid = uuid::Uuid::parse_str(id).ok();
+                    let is_pending = is_own
+                        && message_uuid
+                            .map(|mid| state_load.is_message_pending(mid))
+                            .unwrap_or(false);
+
                     message_items.push(MessageItem {
                         id: id.clone().into(),
                         sender_name: sender_username.clone().into(),
@@ -136,6 +152,8 @@ pub fn setup_chat_bindings(
                         is_group_start,
                         is_host: *is_host,
                         is_system: false,
+                        is_own,
+                        is_pending,
                     });
 
                     prev_sender = Some(sender_username.clone());
@@ -157,6 +175,8 @@ pub fn setup_chat_bindings(
                         is_group_start: true,
                         is_host: false,
                         is_system: true,
+                        is_own: false,
+                        is_pending: false,
                     });
 
                     // Reset grouping after system message
@@ -225,10 +245,14 @@ pub fn setup_chat_bindings(
 
         // Send over network if connected
         let network_manager_clone = network_manager_send.clone();
+        let state_for_pending = state_send.clone();
         tokio::spawn(async move {
             if let Ok(nm) = network_manager_clone.try_lock() {
-                let state = nm.state().await;
-                if state == NetworkState::Hosting || state == NetworkState::Connected {
+                let net_state = nm.state().await;
+                if net_state == NetworkState::Hosting || net_state == NetworkState::Connected {
+                    // Mark as pending before sending
+                    state_for_pending.add_pending_message(message_id);
+
                     let net_msg = NetMessage {
                         id: message_id,
                         hall_id,

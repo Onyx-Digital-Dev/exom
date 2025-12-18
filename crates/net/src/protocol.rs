@@ -97,6 +97,9 @@ pub enum Message {
     /// Chat message from a peer
     Chat(NetMessage),
 
+    /// Acknowledgment that a message was received and broadcast
+    MessageAck { message_id: Uuid },
+
     /// Updated member list (broadcast on join/leave)
     MemberList { members: Vec<PeerInfo> },
 

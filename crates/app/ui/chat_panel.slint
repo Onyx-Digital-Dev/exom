@@ -14,6 +14,8 @@ export struct MessageItem {
     is-group-start: bool,  // True if first message in a group from same sender
     is-host: bool,         // True if sender is current host
     is-system: bool,       // True for system messages (join/leave/host change)
+    is-own: bool,          // True if message is from current user
+    is-pending: bool,      // True if message delivery not yet confirmed
 }
 
 export component ChatPanel inherits Rectangle {
@@ -138,6 +140,17 @@ export component ChatPanel inherits Rectangle {
                                 color: Theme.color-text-dim;
                                 font-size: Theme.text-xs;
                             }
+
+                            // Delivery indicator for own messages
+                            if msg.is-own: Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                y: 4px;
+                                border-radius: 3px;
+                                background: msg.is-pending ? transparent : Theme.color-online;
+                                border-width: msg.is-pending ? 1px : 0;
+                                border-color: Theme.color-text-dim;
+                            }
                         }
 
                         // Content row with inline timestamp for grouped messages
@@ -163,6 +176,16 @@ export component ChatPanel inherits Rectangle {
                                 color: Theme.color-text-dim;
                                 font-size: Theme.text-xs;
                                 vertical-alignment: center;
+                            }
+
+                            // Delivery indicator for own grouped messages
+                            if !msg.is-group-start && msg.is-own: Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: msg.is-pending ? transparent : Theme.color-online;
+                                border-width: msg.is-pending ? 1px : 0;
+                                border-color: Theme.color-text-dim;
                             }
 
                             if msg.is-edited: Text {

@@ -260,6 +260,11 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                 }
             }
         }
+        NetworkEvent::MessageAcked { message_id } => {
+            // Mark message as delivered and refresh UI
+            state.confirm_message(message_id);
+            window.invoke_load_messages();
+        }
     }
 }
 

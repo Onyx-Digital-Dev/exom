@@ -58,6 +58,8 @@ pub enum NetworkEvent {
     BecameHost { port: u16 },
     /// Received batch of messages for sync
     SyncBatchReceived { messages: Vec<NetMessage> },
+    /// Message was acknowledged by host
+    MessageAcked { message_id: Uuid },
     /// Detailed hosting status
     HostingAt { addr: String, port: u16 },
     /// Detailed connected status (as client)
@@ -363,9 +365,15 @@ async fn network_task(
                         // Send via server broadcast if hosting, or via client if connected
                         let s = state.read().await;
                         if let Some(server) = &s.server {
+                            let message_id = msg.id;
                             server.broadcast(exom_net::Message::Chat(msg)).await;
+                            // Host immediately acks since it's the source of truth
+                            let _ = event_tx
+                                .send(NetworkEvent::MessageAcked { message_id })
+                                .await;
                         } else if let Some(c) = &client {
                             let _ = c.send_chat(msg).await;
+                            // Ack will come from host
                         }
                     }
                     Some(NetworkCommand::Disconnect) => {
@@ -974,6 +982,12 @@ async fn handle_client_event(
             );
             let _ = event_tx
                 .send(NetworkEvent::SyncBatchReceived { messages })
+                .await;
+        }
+        ServerEvent::MessageAcked { message_id } => {
+            debug!(message_id = %message_id, "Message acknowledged");
+            let _ = event_tx
+                .send(NetworkEvent::MessageAcked { message_id })
                 .await;
         }
     }

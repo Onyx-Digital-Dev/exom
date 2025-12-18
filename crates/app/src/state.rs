@@ -1,5 +1,6 @@
 //! Application state management
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -35,6 +36,8 @@ pub struct AppState {
     pub system_messages: Arc<Mutex<Vec<SystemMessage>>>,
     /// Currently known members (for detecting joins/leaves)
     pub known_members: Arc<Mutex<Vec<TrackedMember>>>,
+    /// Messages pending delivery confirmation
+    pub pending_messages: Arc<Mutex<HashSet<Uuid>>>,
 }
 
 impl AppState {
@@ -57,6 +60,7 @@ impl AppState {
             current_hall_id: Arc::new(Mutex::new(None)),
             system_messages: Arc::new(Mutex::new(Vec::new())),
             known_members: Arc::new(Mutex::new(Vec::new())),
+            pending_messages: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -180,5 +184,20 @@ impl AppState {
     /// Clear known members (e.g., when disconnecting)
     pub fn clear_known_members(&self) {
         self.known_members.lock().unwrap().clear();
+    }
+
+    /// Mark a message as pending delivery
+    pub fn add_pending_message(&self, message_id: Uuid) {
+        self.pending_messages.lock().unwrap().insert(message_id);
+    }
+
+    /// Mark a message as delivered (remove from pending)
+    pub fn confirm_message(&self, message_id: Uuid) {
+        self.pending_messages.lock().unwrap().remove(&message_id);
+    }
+
+    /// Check if a message is pending delivery
+    pub fn is_message_pending(&self, message_id: Uuid) -> bool {
+        self.pending_messages.lock().unwrap().contains(&message_id)
     }
 }

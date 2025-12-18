@@ -75,7 +75,7 @@ impl<'a> MessageStore<'a> {
     ) -> Result<Vec<MessageDisplay>> {
         // Order by: sequence (NULL last via COALESCE), then timestamp, then id for determinism
         let query = if before.is_some() {
-            "SELECT m.id, u.username, mb.role, m.content, m.created_at, m.edited_at
+            "SELECT m.id, m.sender_id, u.username, mb.role, m.content, m.created_at, m.edited_at
              FROM messages m
              INNER JOIN users u ON u.id = m.sender_id
              LEFT JOIN memberships mb ON mb.user_id = m.sender_id AND mb.hall_id = m.hall_id
@@ -83,7 +83,7 @@ impl<'a> MessageStore<'a> {
              ORDER BY COALESCE(m.sequence, 9223372036854775807) DESC, m.created_at DESC, m.id DESC
              LIMIT ?3"
         } else {
-            "SELECT m.id, u.username, mb.role, m.content, m.created_at, m.edited_at
+            "SELECT m.id, m.sender_id, u.username, mb.role, m.content, m.created_at, m.edited_at
              FROM messages m
              INNER JOIN users u ON u.id = m.sender_id
              LEFT JOIN memberships mb ON mb.user_id = m.sender_id AND mb.hall_id = m.hall_id
@@ -117,14 +117,15 @@ impl<'a> MessageStore<'a> {
     fn map_message_display(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageDisplay> {
         Ok(MessageDisplay {
             id: parse_uuid(&row.get::<_, String>(0)?)?,
-            sender_username: row.get(1)?,
+            sender_id: parse_uuid(&row.get::<_, String>(1)?)?,
+            sender_username: row.get(2)?,
             sender_role: row
-                .get::<_, Option<u8>>(2)?
+                .get::<_, Option<u8>>(3)?
                 .map(role_from_u8)
                 .unwrap_or(HallRole::HallFellow),
-            content: row.get(3)?,
-            timestamp: parse_datetime(&row.get::<_, String>(4)?)?,
-            is_edited: row.get::<_, Option<String>>(5)?.is_some(),
+            content: row.get(4)?,
+            timestamp: parse_datetime(&row.get::<_, String>(5)?)?,
+            is_edited: row.get::<_, Option<String>>(6)?.is_some(),
         })
     }
 

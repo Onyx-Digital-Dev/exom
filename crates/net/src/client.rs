@@ -68,6 +68,8 @@ pub enum ServerEvent {
         from_sequence: u64,
         messages: Vec<crate::protocol::NetMessage>,
     },
+    /// Message was acknowledged by host
+    MessageAcked { message_id: Uuid },
 }
 
 /// Client handle for network operations
@@ -453,6 +455,12 @@ async fn handle_server_message(
                     from_sequence,
                     messages,
                 })
+                .await;
+        }
+        Message::MessageAck { message_id } => {
+            debug!(message_id = %message_id, "Received message ack");
+            let _ = event_tx
+                .send(ServerEvent::MessageAcked { message_id })
                 .await;
         }
         _ => {
