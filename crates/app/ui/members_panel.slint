@@ -1,0 +1,296 @@
+// Right panel - Members and settings
+
+import { Theme } from "theme.slint";
+import { Button, ListItem, OnlineIndicator, RoleBadge, Separator, StatusText } from "components.slint";
+
+// Member data
+export struct MemberItem {
+    id: string,
+    name: string,
+    role: string,
+    is-online: bool,
+    is-host: bool,
+}
+
+// Chest file data
+export struct ChestFileItem {
+    name: string,
+    is-directory: bool,
+    size: string,
+    sync-status: string,
+}
+
+export component MembersPanel inherits Rectangle {
+    in property <[MemberItem]> members;
+    in property <[ChestFileItem]> chest-files;
+    in property <string> chest-path;
+    in property <string> chest-status;
+    in property <string> current-user-id;
+
+    callback promote-member(string);
+    callback demote-member(string);
+    callback kick-member(string);
+    callback load-chest-files();
+
+    property <string> selected-member-id;
+    property <bool> show-context-menu: false;
+    property <bool> show-chest: false;
+
+    background: Theme.surface;
+    width: Theme.right-panel-width;
+
+    VerticalLayout {
+        // Header with tabs
+        Rectangle {
+            height: 48px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-lg;
+                alignment: start;
+
+                // Members tab
+                TouchArea {
+                    width: 70px;
+                    height: 48px;
+                    clicked => { root.show-chest = false; }
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "Members";
+                        color: !root.show-chest ? Theme.text-primary : Theme.text-secondary;
+                        font-size: Theme.font-md;
+                        font-weight: !root.show-chest ? 500 : 400;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Chest tab
+                TouchArea {
+                    width: 50px;
+                    height: 48px;
+                    clicked => {
+                        root.show-chest = true;
+                        root.load-chest-files();
+                    }
+
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: "Chest";
+                        color: root.show-chest ? Theme.text-primary : Theme.text-secondary;
+                        font-size: Theme.font-md;
+                        font-weight: root.show-chest ? 500 : 400;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        Separator {}
+
+        if !root.show-chest: VerticalLayout {
+            vertical-stretch: 1;
+
+            // Member list
+            Flickable {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: 2px;
+
+                    for member in root.members: Rectangle {
+                        height: 44px;
+                        background: member.id == root.selected-member-id ? Theme.surface-elevated : transparent;
+
+                        touch := TouchArea {
+                            clicked => {
+                                if root.selected-member-id == member.id {
+                                    root.selected-member-id = "";
+                                } else {
+                                    root.selected-member-id = member.id;
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            alignment: start;
+
+                            Rectangle {
+                                width: 16px;
+                                height: 44px;
+
+                                OnlineIndicator {
+                                    y: 18px;
+                                    online: member.is-online;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+
+                                HorizontalLayout {
+                                    spacing: Theme.spacing-xs;
+
+                                    Text {
+                                        text: member.name;
+                                        color: Theme.text-primary;
+                                        font-size: Theme.font-md;
+                                        overflow: elide;
+                                    }
+
+                                    if member.is-host: Text {
+                                        text: "[Host]";
+                                        color: Theme.accent;
+                                        font-size: Theme.font-xs;
+                                    }
+                                }
+
+                                Text {
+                                    text: member.role;
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.font-xs;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Context actions for selected member
+            if root.selected-member-id != "" && root.selected-member-id != root.current-user-id: Rectangle {
+                height: 80px;
+                background: Theme.surface-elevated;
+
+                VerticalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: Theme.spacing-xs;
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-xs;
+
+                        Button {
+                            label: "Promote";
+                            horizontal-stretch: 1;
+                            clicked => { root.promote-member(root.selected-member-id); }
+                        }
+
+                        Button {
+                            label: "Demote";
+                            horizontal-stretch: 1;
+                            clicked => { root.demote-member(root.selected-member-id); }
+                        }
+                    }
+
+                    Button {
+                        label: "Kick";
+                        clicked => { root.kick-member(root.selected-member-id); root.selected-member-id = ""; }
+                    }
+                }
+            }
+        }
+
+        // Chest view
+        if root.show-chest: VerticalLayout {
+            vertical-stretch: 1;
+
+            // Path display
+            Rectangle {
+                height: 32px;
+                background: Theme.surface-elevated;
+
+                Text {
+                    x: Theme.spacing-sm;
+                    width: parent.width - Theme.spacing-md;
+                    height: 100%;
+                    text: root.chest-path;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            // File list
+            Flickable {
+                vertical-stretch: 1;
+
+                VerticalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: 2px;
+
+                    for file in root.chest-files: Rectangle {
+                        height: 36px;
+                        background: transparent;
+
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+
+                            Text {
+                                width: 40px;
+                                text: file.is-directory ? "[DIR]" : "";
+                                color: Theme.text-muted;
+                                font-size: Theme.font-xs;
+                            }
+
+                            Text {
+                                text: file.name;
+                                color: Theme.text-primary;
+                                font-size: Theme.font-sm;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: file.size;
+                                color: Theme.text-secondary;
+                                font-size: Theme.font-xs;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sync status
+            Rectangle {
+                height: 28px;
+                background: Theme.surface-elevated;
+
+                Text {
+                    x: Theme.spacing-sm;
+                    width: parent.width - Theme.spacing-md;
+                    height: 100%;
+                    text: root.chest-status;
+                    color: Theme.text-muted;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Separator {}
+
+        // Settings button
+        Rectangle {
+            height: 48px;
+            background: Theme.surface;
+
+            Button {
+                x: Theme.spacing-sm;
+                width: parent.width - Theme.spacing-md;
+                label: "Hall Settings";
+            }
+        }
+    }
+}

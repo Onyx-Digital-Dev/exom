@@ -1,0 +1,97 @@
+//! Chat view model
+
+use std::sync::Arc;
+
+use exom_core::Message;
+use slint::{ComponentHandle, ModelRc, VecModel};
+
+use crate::state::AppState;
+use crate::MainWindow;
+use crate::MessageItem;
+
+pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
+    // Load messages
+    let state_load = state.clone();
+    let window_weak = window.as_weak();
+    window.on_load_messages(move || {
+        let hall_id = match state_load.current_hall_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let db = state_load.db.lock().unwrap();
+        let messages = match db.messages().list_for_hall(hall_id, 100, None) {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+
+        let message_items: Vec<MessageItem> = messages.iter().map(|m| {
+            MessageItem {
+                id: m.id.to_string().into(),
+                sender_name: m.sender_username.clone().into(),
+                sender_role: m.sender_role.short_name().into(),
+                content: m.content.clone().into(),
+                timestamp: m.format_timestamp().into(),
+                is_edited: m.is_edited,
+            }
+        }).collect();
+
+        drop(db);
+
+        if let Some(w) = window_weak.upgrade() {
+            let model = std::rc::Rc::new(VecModel::from(message_items));
+            w.set_messages(ModelRc::from(model));
+        }
+    });
+
+    // Send message
+    let state_send = state.clone();
+    let window_weak = window.as_weak();
+    window.on_send_message(move |content| {
+        let content = content.to_string().trim().to_string();
+        if content.is_empty() {
+            return;
+        }
+
+        let user_id = match state_send.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let hall_id = match state_send.current_hall_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let message = Message::new(hall_id, user_id, content);
+
+        let db = state_send.db.lock().unwrap();
+        if db.messages().create(&message).is_err() {
+            return;
+        }
+        drop(db);
+
+        // Reload messages
+        if let Some(w) = window_weak.upgrade() {
+            w.invoke_load_messages();
+        }
+    });
+
+    // Delete message
+    let state_delete = state.clone();
+    let window_weak = window.as_weak();
+    window.on_delete_message(move |message_id_str| {
+        let message_id = match uuid::Uuid::parse_str(&message_id_str) {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+
+        let db = state_delete.db.lock().unwrap();
+        let _ = db.messages().delete(message_id);
+        drop(db);
+
+        if let Some(w) = window_weak.upgrade() {
+            w.invoke_load_messages();
+        }
+    });
+}

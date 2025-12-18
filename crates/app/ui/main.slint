@@ -1,0 +1,183 @@
+// Exom Main Window
+
+import { Theme } from "theme.slint";
+import { VerticalSeparator, Button } from "components.slint";
+import { AuthView } from "auth.slint";
+import { HallsPanel, HallItem } from "halls_panel.slint";
+import { ChatPanel, EmptyChatPanel, MessageItem } from "chat_panel.slint";
+import { MembersPanel, MemberItem, ChestFileItem } from "members_panel.slint";
+
+export { HallItem, MessageItem, MemberItem, ChestFileItem }
+
+export component MainWindow inherits Window {
+    title: "Exom";
+    background: Theme.background;
+    min-width: 900px;
+    min-height: 600px;
+    preferred-width: 1200px;
+    preferred-height: 800px;
+
+    // Auth state
+    in-out property <bool> is-logged-in: false;
+    in-out property <string> current-username;
+    in-out property <string> auth-error;
+
+    // Hall state
+    in-out property <[HallItem]> halls: [];
+    in-out property <string> current-hall-id;
+    in-out property <string> current-hall-name;
+    in-out property <string> current-host-name;
+    in-out property <string> current-user-role;
+    in-out property <string> hall-error;
+
+    // Chat state
+    in-out property <[MessageItem]> messages: [];
+
+    // Members state
+    in-out property <[MemberItem]> members: [];
+
+    // Chest state
+    in-out property <[ChestFileItem]> chest-files: [];
+    in-out property <string> chest-path;
+    in-out property <string> chest-status;
+
+    // Auth callbacks
+    callback login(string, string);
+    callback register(string, string);
+    callback logout();
+
+    // Hall callbacks
+    callback load-halls();
+    callback create-hall(string);
+    callback select-hall(string);
+    callback join-with-invite(string);
+    callback create-invite(int) -> string;
+    callback leave-hall();
+
+    // Chat callbacks
+    callback load-messages();
+    callback send-message(string);
+    callback delete-message(string);
+
+    // Member callbacks
+    callback load-members();
+    callback promote-member(string);
+    callback demote-member(string);
+    callback kick-member(string);
+
+    // Chest callbacks
+    callback load-chest-files();
+
+    // Auth view
+    if !root.is-logged-in: AuthView {
+        error-text: root.auth-error;
+        login(u, p) => { root.login(u, p); }
+        register(u, p) => { root.register(u, p); }
+    }
+
+    // Main app view
+    if root.is-logged-in: VerticalLayout {
+        // Top bar
+        Rectangle {
+            height: 36px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+
+                Text {
+                    text: "Exom";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Text {
+                    text: root.current-username;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { width: Theme.spacing-md; }
+
+                Button {
+                    label: "Logout";
+                    clicked => { root.logout(); }
+                }
+            }
+        }
+
+        // Three-panel layout
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // Left panel - Halls
+            HallsPanel {
+                halls: root.halls;
+                current-hall-id: root.current-hall-id;
+                error-text: root.hall-error;
+                select-hall(id) => { root.select-hall(id); }
+                create-hall(name) => { root.create-hall(name); }
+                join-with-invite(token) => { root.join-with-invite(token); }
+            }
+
+            VerticalSeparator {}
+
+            // Center panel - Chat
+            if root.current-hall-id != "": ChatPanel {
+                horizontal-stretch: 1;
+                hall-name: root.current-hall-name;
+                host-name: root.current-host-name;
+                user-role: root.current-user-role;
+                messages: root.messages;
+                send-message(msg) => { root.send-message(msg); }
+                delete-message(id) => { root.delete-message(id); }
+            }
+
+            if root.current-hall-id == "": EmptyChatPanel {
+                horizontal-stretch: 1;
+            }
+
+            VerticalSeparator {}
+
+            // Right panel - Members
+            if root.current-hall-id != "": MembersPanel {
+                members: root.members;
+                chest-files: root.chest-files;
+                chest-path: root.chest-path;
+                chest-status: root.chest-status;
+                current-user-id: "";  // Will be set by binding
+                promote-member(id) => { root.promote-member(id); }
+                demote-member(id) => { root.demote-member(id); }
+                kick-member(id) => { root.kick-member(id); }
+                load-chest-files => { root.load-chest-files(); }
+            }
+
+            // Empty right panel placeholder
+            if root.current-hall-id == "": Rectangle {
+                width: Theme.right-panel-width;
+                background: Theme.surface;
+
+                Text {
+                    text: "No Hall Selected";
+                    color: Theme.text-muted;
+                    font-size: Theme.font-sm;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Load halls on login
+    init => {
+        if root.is-logged-in {
+            root.load-halls();
+        }
+    }
+}

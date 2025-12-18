@@ -1,0 +1,161 @@
+// Reusable UI components
+
+import { Theme } from "theme.slint";
+
+// Text input field
+export component TextInput inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <bool> password;
+
+    callback accepted();
+
+    background: Theme.surface;
+    border-color: Theme.border-subtle;
+    border-width: Theme.border-width;
+    height: 32px;
+
+    input := TextInput {
+        x: Theme.spacing-sm;
+        width: parent.width - Theme.spacing-md;
+        height: parent.height;
+        color: Theme.text-primary;
+        font-size: Theme.font-md;
+        text <=> root.text;
+        input-type: root.password ? InputType.password : InputType.text;
+
+        accepted => { root.accepted(); }
+    }
+
+    placeholder-text := Text {
+        x: Theme.spacing-sm;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        font-size: Theme.font-md;
+        vertical-alignment: center;
+        visible: input.text == "";
+    }
+}
+
+// Button
+export component Button inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    background: root.primary ? Theme.accent : Theme.surface;
+    border-color: root.primary ? Theme.accent : Theme.border;
+    border-width: Theme.border-width;
+    height: 32px;
+    min-width: 80px;
+
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: root.primary ? Theme.background : Theme.text-primary;
+        font-size: Theme.font-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    states [
+        hover when touch.has-hover && root.enabled: {
+            background: root.primary ? Theme.accent-muted : Theme.surface-elevated;
+        }
+    ]
+}
+
+// Panel header
+export component PanelHeader inherits Rectangle {
+    in property <string> title;
+
+    background: Theme.surface;
+    border-color: Theme.border-subtle;
+    border-width: Theme.border-width;
+    height: 40px;
+
+    Text {
+        x: Theme.spacing-md;
+        text: root.title;
+        color: Theme.text-primary;
+        font-size: Theme.font-lg;
+        font-weight: 500;
+        vertical-alignment: center;
+    }
+}
+
+// List item base
+export component ListItem inherits Rectangle {
+    in property <bool> selected: false;
+
+    callback clicked();
+
+    background: root.selected ? Theme.accent-muted : (touch.has-hover ? Theme.surface-elevated : transparent);
+    height: 36px;
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Online indicator dot
+export component OnlineIndicator inherits Rectangle {
+    in property <bool> online;
+
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: root.online ? Theme.online : Theme.offline;
+}
+
+// Role badge
+export component RoleBadge inherits Rectangle {
+    in property <string> role;
+
+    background: Theme.surface-elevated;
+    border-color: Theme.border-subtle;
+    border-width: Theme.border-width;
+    height: 18px;
+    min-width: 50px;
+
+    Text {
+        text: root.role;
+        color: Theme.text-secondary;
+        font-size: Theme.font-xs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Separator line
+export component Separator inherits Rectangle {
+    background: Theme.border-subtle;
+    height: 1px;
+}
+
+// Vertical separator
+export component VerticalSeparator inherits Rectangle {
+    background: Theme.border;
+    width: 1px;
+}
+
+// Error text
+export component ErrorText inherits Text {
+    color: Theme.error;
+    font-size: Theme.font-sm;
+    visible: self.text != "";
+}
+
+// Status text
+export component StatusText inherits Text {
+    color: Theme.text-muted;
+    font-size: Theme.font-xs;
+}

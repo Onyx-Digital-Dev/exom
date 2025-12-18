@@ -1,0 +1,177 @@
+// Center panel - Chat and activity
+
+import { Theme } from "theme.slint";
+import { TextInput, Button, Separator, RoleBadge } from "components.slint";
+
+// Message data
+export struct MessageItem {
+    id: string,
+    sender-name: string,
+    sender-role: string,
+    content: string,
+    timestamp: string,
+    is-edited: bool,
+}
+
+export component ChatPanel inherits Rectangle {
+    in property <string> hall-name;
+    in property <string> host-name;
+    in property <string> user-role;
+    in property <[MessageItem]> messages;
+
+    callback send-message(string);
+    callback delete-message(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        // Header
+        Rectangle {
+            height: 48px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+
+                    Text {
+                        text: root.hall-name;
+                        color: Theme.text-primary;
+                        font-size: Theme.font-lg;
+                        font-weight: 500;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+
+                        Text {
+                            text: "Host: " + root.host-name;
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-xs;
+                        }
+
+                        Text {
+                            text: root.user-role;
+                            color: Theme.text-muted;
+                            font-size: Theme.font-xs;
+                        }
+                    }
+                }
+            }
+        }
+
+        Separator {}
+
+        // Message list
+        Flickable {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+
+                for msg in root.messages: Rectangle {
+                    background: transparent;
+
+                    VerticalLayout {
+                        spacing: 2px;
+
+                        // Header row
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+
+                            Text {
+                                text: msg.sender-name;
+                                color: Theme.accent;
+                                font-size: Theme.font-sm;
+                                font-weight: 500;
+                            }
+
+                            RoleBadge {
+                                role: msg.sender-role;
+                            }
+
+                            Text {
+                                text: msg.timestamp;
+                                color: Theme.text-muted;
+                                font-size: Theme.font-xs;
+                            }
+
+                            if msg.is-edited: Text {
+                                text: "(edited)";
+                                color: Theme.text-muted;
+                                font-size: Theme.font-xs;
+                            }
+                        }
+
+                        // Content
+                        Text {
+                            text: msg.content;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-md;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+
+        Separator {}
+
+        // Compose bar
+        Rectangle {
+            height: 56px;
+            background: Theme.surface;
+
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+
+                message-input := TextInput {
+                    horizontal-stretch: 1;
+                    placeholder: "Type a message...";
+                    accepted => {
+                        root.send-message(self.text);
+                        self.text = "";
+                    }
+                }
+
+                Button {
+                    label: "Send";
+                    primary: true;
+                    clicked => {
+                        root.send-message(message-input.text);
+                        message-input.text = "";
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Empty state when no hall selected
+export component EmptyChatPanel inherits Rectangle {
+    background: Theme.background;
+
+    VerticalLayout {
+        alignment: center;
+
+        Text {
+            text: "Select a Hall";
+            color: Theme.text-secondary;
+            font-size: Theme.font-lg;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "or create a new one to get started";
+            color: Theme.text-muted;
+            font-size: Theme.font-sm;
+            horizontal-alignment: center;
+        }
+    }
+}

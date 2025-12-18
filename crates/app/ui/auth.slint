@@ -1,0 +1,93 @@
+// Authentication view (login/register)
+
+import { Theme } from "theme.slint";
+import { TextInput, Button, ErrorText } from "components.slint";
+
+export component AuthView inherits Rectangle {
+    in property <string> error-text;
+
+    callback login(string, string);
+    callback register(string, string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.spacing-lg;
+
+        Rectangle {
+            width: 320px;
+            background: Theme.surface;
+            border-color: Theme.border;
+            border-width: Theme.border-width;
+
+            VerticalLayout {
+                padding: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+
+                Text {
+                    text: "Exom";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-xl;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Hall-based collaboration";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-sm;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle { height: Theme.spacing-md; }
+
+                Text {
+                    text: "Username";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-sm;
+                }
+
+                username-input := TextInput {
+                    placeholder: "Enter username";
+                }
+
+                Text {
+                    text: "Password";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-sm;
+                }
+
+                password-input := TextInput {
+                    placeholder: "Enter password";
+                    password: true;
+                    accepted => { root.login(username-input.text, password-input.text); }
+                }
+
+                ErrorText {
+                    text: root.error-text;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle { height: Theme.spacing-sm; }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+
+                    Button {
+                        label: "Register";
+                        horizontal-stretch: 1;
+                        clicked => { root.register(username-input.text, password-input.text); }
+                    }
+
+                    Button {
+                        label: "Login";
+                        primary: true;
+                        horizontal-stretch: 1;
+                        clicked => { root.login(username-input.text, password-input.text); }
+                    }
+                }
+            }
+        }
+    }
+}
