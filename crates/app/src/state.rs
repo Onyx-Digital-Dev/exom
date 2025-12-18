@@ -200,4 +200,31 @@ impl AppState {
     pub fn is_message_pending(&self, message_id: Uuid) -> bool {
         self.pending_messages.lock().unwrap().contains(&message_id)
     }
+
+    /// Reconcile pending messages against database
+    /// Messages that exist in DB but are still marked pending should be confirmed
+    /// Returns count of messages reconciled
+    pub fn reconcile_pending_messages(&self, _hall_id: Uuid) -> usize {
+        let pending: Vec<Uuid> = self.pending_messages.lock().unwrap().iter().cloned().collect();
+        if pending.is_empty() {
+            return 0;
+        }
+
+        // Check which pending messages exist in DB
+        let to_confirm: Vec<Uuid> = {
+            let db = self.db.lock().unwrap();
+            pending
+                .into_iter()
+                .filter(|msg_id| db.messages().find_by_id(*msg_id).ok().flatten().is_some())
+                .collect()
+        };
+
+        // Confirm them (db lock released)
+        let count = to_confirm.len();
+        for msg_id in to_confirm {
+            self.confirm_message(msg_id);
+        }
+
+        count
+    }
 }

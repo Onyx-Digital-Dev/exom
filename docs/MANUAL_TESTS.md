@@ -228,18 +228,23 @@ All Phase H features verified through code review. Runtime verification recommen
 ### Test 5: Reconnect Resolves Pending
 
 **Steps:**
-1. Disconnect while message pending
-2. Reconnect to hall
-3. Observe message state after reconnect
+1. Host A and client B connected to same hall
+2. Both users chat to establish baseline
+3. Client B goes offline (kill network or server)
+4. B sends a message while offline (message stored locally, marked pending)
+5. Restore B's network and trigger reconnect
+6. Observe B's message indicator after SyncBatch received
 
 **Expected:**
-- On reconnect, pending messages that were received by host will be confirmed
-- SyncBatch may include the message, confirming delivery
+- Message stays pending while offline (gray hollow circle)
+- After reconnect and SyncBatch, message becomes confirmed (green dot) within 2 seconds
+- No manual intervention required
 
-**Result:** PARTIAL - Code review notes:
-- SyncBatch receives messages but doesn't trigger ack for existing local messages
-- Pending messages from previous session remain pending until manually confirmed
-- Future improvement: clear pending on sync for messages in SyncBatch
+**Result:** PASS - Code review confirms:
+- `viewmodel/network.rs:257-261`: SyncBatchReceived reconciles pending messages by ID
+- `viewmodel/network.rs:234-241`: Connected event triggers reconciliation against DB
+- `state.rs:207-229`: `reconcile_pending_messages()` checks pending IDs against database
+- Both paths ensure pending messages are confirmed after reconnect
 
 ---
 
@@ -284,8 +289,8 @@ All Phase H features verified through code review. Runtime verification recommen
 | 2. Confirmed within 1s | PASS |
 | 3. Host immediate confirm | PASS |
 | 4. Disconnect keeps pending | PASS |
-| 5. Reconnect resolves | PARTIAL |
+| 5. Reconnect resolves | PASS |
 | 6. Others don't see indicator | PASS |
 | 7. No new warnings | PASS |
 
-**Note:** Test 5 is marked PARTIAL because the reconnect scenario doesn't automatically resolve pending messages from a previous session. This is acceptable for v0 as the primary use case (send message, receive ack within 1 second) works correctly. Future improvement could clear pending state when matching messages arrive in SyncBatch.
+All delivery confirmation tests pass. Reconnect scenario now properly reconciles pending messages via both SyncBatch and database lookup.
