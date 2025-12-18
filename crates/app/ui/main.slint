@@ -36,6 +36,7 @@ export component MainWindow inherits Window {
 
     // Members state
     in-out property <[MemberItem]> members: [];
+    in-out property <string> current-user-id;
 
     // Chest state
     in-out property <[ChestFileItem]> chest-files: [];
@@ -166,7 +167,7 @@ export component MainWindow inherits Window {
                 chest-files: root.chest-files;
                 chest-path: root.chest-path;
                 chest-status: root.chest-status;
-                current-user-id: "";
+                current-user-id: root.current-user-id;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }

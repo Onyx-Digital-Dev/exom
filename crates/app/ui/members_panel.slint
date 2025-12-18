@@ -10,6 +10,7 @@ export struct MemberItem {
     role: string,
     is-online: bool,
     is-host: bool,
+    is-you: bool,
 }
 
 // Chest file data
@@ -154,6 +155,13 @@ export component MembersPanel inherits Rectangle {
                                         color: Theme.color-text;
                                         font-size: Theme.text-md;
                                         overflow: elide;
+                                    }
+
+                                    if member.is-you: Text {
+                                        text: "(You)";
+                                        color: Theme.color-text-muted;
+                                        font-size: Theme.text-sm;
+                                        vertical-alignment: center;
                                     }
 
                                     if member.is-host: HostBadge {}

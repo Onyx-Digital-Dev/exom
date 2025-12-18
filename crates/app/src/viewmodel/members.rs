@@ -20,6 +20,8 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             None => return,
         };
 
+        let current_user_id = state_load.current_user_id();
+
         let db = state_load.db.lock().unwrap();
         let members = match db.halls().list_members(hall_id) {
             Ok(m) => m,
@@ -34,6 +36,7 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
                 role: m.role.display_name().into(),
                 is_online: m.is_online,
                 is_host: m.is_host,
+                is_you: current_user_id == Some(m.user_id),
             })
             .collect();
 
@@ -42,6 +45,10 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
         if let Some(w) = window_weak.upgrade() {
             let model = std::rc::Rc::new(VecModel::from(member_items));
             w.set_members(ModelRc::from(model));
+            // Set current user id for context action gating
+            if let Some(uid) = current_user_id {
+                w.set_current_user_id(uid.to_string().into());
+            }
         }
     });
 
