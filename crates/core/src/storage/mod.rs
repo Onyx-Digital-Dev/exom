@@ -3,6 +3,7 @@
 mod halls;
 mod invites;
 mod messages;
+mod parse;
 mod schema;
 mod users;
 

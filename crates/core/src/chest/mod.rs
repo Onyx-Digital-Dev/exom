@@ -211,12 +211,6 @@ impl HallChest {
     }
 }
 
-impl Default for HallChest {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize HallChest")
-    }
-}
-
 /// Trait for future sync implementation
 pub trait ChestSync: Send + Sync {
     /// Start syncing a Hall's chest

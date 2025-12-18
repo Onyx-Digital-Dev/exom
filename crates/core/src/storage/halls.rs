@@ -1,11 +1,13 @@
 //! Hall storage operations
 
-use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+use super::parse::{
+    parse_datetime, parse_parlor_id_opt, parse_uuid, parse_uuid_opt, role_from_u8, OptionalExt,
+};
 use crate::error::Result;
-use crate::models::{Hall, HallRole, MemberInfo, Membership, ParlorId};
+use crate::models::{Hall, HallRole, MemberInfo, Membership};
 
 pub struct HallStore<'a> {
     conn: &'a Connection,
@@ -39,25 +41,19 @@ impl<'a> HallStore<'a> {
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<Hall>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, owner_id, created_at, active_parlor, current_host_id, election_epoch
-             FROM halls WHERE id = ?1"
+             FROM halls WHERE id = ?1",
         )?;
 
         let hall = stmt
             .query_row(params![id.to_string()], |row| {
                 Ok(Hall {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    active_parlor: row
-                        .get::<_, Option<String>>(5)?
-                        .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
-                    current_host_id: row
-                        .get::<_, Option<String>>(6)?
-                        .map(|s| Uuid::parse_str(&s).unwrap()),
+                    owner_id: parse_uuid(&row.get::<_, String>(3)?)?,
+                    created_at: parse_datetime(&row.get::<_, String>(4)?)?,
+                    active_parlor: parse_parlor_id_opt(row.get::<_, Option<String>>(5)?)?,
+                    current_host_id: parse_uuid_opt(row.get::<_, Option<String>>(6)?)?,
                     election_epoch: row.get(7)?,
                 })
             })
@@ -99,25 +95,19 @@ impl<'a> HallStore<'a> {
              FROM halls h
              INNER JOIN memberships m ON m.hall_id = h.id
              WHERE m.user_id = ?1
-             ORDER BY h.name"
+             ORDER BY h.name",
         )?;
 
         let halls = stmt
             .query_map(params![user_id.to_string()], |row| {
                 Ok(Hall {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     name: row.get(1)?,
                     description: row.get(2)?,
-                    owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    active_parlor: row
-                        .get::<_, Option<String>>(5)?
-                        .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
-                    current_host_id: row
-                        .get::<_, Option<String>>(6)?
-                        .map(|s| Uuid::parse_str(&s).unwrap()),
+                    owner_id: parse_uuid(&row.get::<_, String>(3)?)?,
+                    created_at: parse_datetime(&row.get::<_, String>(4)?)?,
+                    active_parlor: parse_parlor_id_opt(row.get::<_, Option<String>>(5)?)?,
+                    current_host_id: parse_uuid_opt(row.get::<_, Option<String>>(6)?)?,
                     election_epoch: row.get(7)?,
                 })
             })?
@@ -153,13 +143,11 @@ impl<'a> HallStore<'a> {
         let membership = stmt
             .query_row(params![user_id.to_string(), hall_id.to_string()], |row| {
                 Ok(Membership {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                    hall_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    user_id: parse_uuid(&row.get::<_, String>(1)?)?,
+                    hall_id: parse_uuid(&row.get::<_, String>(2)?)?,
                     role: role_from_u8(row.get::<_, u8>(3)?),
-                    joined_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    joined_at: parse_datetime(&row.get::<_, String>(4)?)?,
                     is_online: row.get::<_, i32>(5)? != 0,
                 })
             })
@@ -213,10 +201,8 @@ impl<'a> HallStore<'a> {
 
         let members = stmt
             .query_map(params![hall_id.to_string()], |row| {
-                let user_id = Uuid::parse_str(&row.get::<_, String>(0)?).unwrap();
-                let host_id = row
-                    .get::<_, Option<String>>(4)?
-                    .map(|s| Uuid::parse_str(&s).unwrap());
+                let user_id = parse_uuid(&row.get::<_, String>(0)?)?;
+                let host_id = parse_uuid_opt(row.get::<_, Option<String>>(4)?)?;
 
                 Ok(MemberInfo {
                     user_id,
@@ -235,29 +221,5 @@ impl<'a> HallStore<'a> {
     pub fn get_user_role(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<HallRole>> {
         let membership = self.get_membership(user_id, hall_id)?;
         Ok(membership.map(|m| m.role))
-    }
-}
-
-fn role_from_u8(value: u8) -> HallRole {
-    match value {
-        5 => HallRole::HallBuilder,
-        4 => HallRole::HallPrefect,
-        3 => HallRole::HallModerator,
-        2 => HallRole::HallAgent,
-        _ => HallRole::HallFellow,
-    }
-}
-
-trait OptionalExt<T> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error>;
-}
-
-impl<T> OptionalExt<T> for std::result::Result<T, rusqlite::Error> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }

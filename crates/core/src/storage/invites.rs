@@ -1,11 +1,11 @@
 //! Invite storage operations
 
-use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, role_from_u8, OptionalExt};
 use crate::error::Result;
-use crate::models::{HallRole, Invite};
+use crate::models::Invite;
 
 pub struct InviteStore<'a> {
     conn: &'a Connection,
@@ -41,25 +41,19 @@ impl<'a> InviteStore<'a> {
     pub fn find_by_token(&self, token: &str) -> Result<Option<Invite>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, token, created_by, role, created_at, expires_at, max_uses, use_count, is_revoked
-             FROM invites WHERE token = ?1"
+             FROM invites WHERE token = ?1",
         )?;
 
         let invite = stmt
             .query_row(params![token], |row| {
                 Ok(Invite {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    hall_id: parse_uuid(&row.get::<_, String>(1)?)?,
                     token: row.get(2)?,
-                    created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    created_by: parse_uuid(&row.get::<_, String>(3)?)?,
                     role: role_from_u8(row.get::<_, u8>(4)?),
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    expires_at: row.get::<_, Option<String>>(6)?.map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .unwrap()
-                            .with_timezone(&Utc)
-                    }),
+                    created_at: parse_datetime(&row.get::<_, String>(5)?)?,
+                    expires_at: parse_datetime_opt(row.get::<_, Option<String>>(6)?)?,
                     max_uses: row.get(7)?,
                     use_count: row.get(8)?,
                     is_revoked: row.get::<_, i32>(9)? != 0,
@@ -74,25 +68,19 @@ impl<'a> InviteStore<'a> {
     pub fn list_for_hall(&self, hall_id: Uuid) -> Result<Vec<Invite>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, token, created_by, role, created_at, expires_at, max_uses, use_count, is_revoked
-             FROM invites WHERE hall_id = ?1 ORDER BY created_at DESC"
+             FROM invites WHERE hall_id = ?1 ORDER BY created_at DESC",
         )?;
 
         let invites = stmt
             .query_map(params![hall_id.to_string()], |row| {
                 Ok(Invite {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    hall_id: parse_uuid(&row.get::<_, String>(1)?)?,
                     token: row.get(2)?,
-                    created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    created_by: parse_uuid(&row.get::<_, String>(3)?)?,
                     role: role_from_u8(row.get::<_, u8>(4)?),
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    expires_at: row.get::<_, Option<String>>(6)?.map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .unwrap()
-                            .with_timezone(&Utc)
-                    }),
+                    created_at: parse_datetime(&row.get::<_, String>(5)?)?,
+                    expires_at: parse_datetime_opt(row.get::<_, Option<String>>(6)?)?,
                     max_uses: row.get(7)?,
                     use_count: row.get(8)?,
                     is_revoked: row.get::<_, i32>(9)? != 0,
@@ -128,29 +116,5 @@ impl<'a> InviteStore<'a> {
             params![invite_id.to_string()],
         )?;
         Ok(())
-    }
-}
-
-fn role_from_u8(value: u8) -> HallRole {
-    match value {
-        5 => HallRole::HallBuilder,
-        4 => HallRole::HallPrefect,
-        3 => HallRole::HallModerator,
-        2 => HallRole::HallAgent,
-        _ => HallRole::HallFellow,
-    }
-}
-
-trait OptionalExt<T> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error>;
-}
-
-impl<T> OptionalExt<T> for std::result::Result<T, rusqlite::Error> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }

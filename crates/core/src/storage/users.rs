@@ -1,9 +1,10 @@
 //! User storage operations
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, OptionalExt};
 use crate::error::Result;
 use crate::models::{Session, User};
 
@@ -40,17 +41,11 @@ impl<'a> UserStore<'a> {
         let user = stmt
             .query_row(params![id.to_string()], |row| {
                 Ok(User {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    last_login: row.get::<_, Option<String>>(4)?.map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .unwrap()
-                            .with_timezone(&Utc)
-                    }),
+                    created_at: parse_datetime(&row.get::<_, String>(3)?)?,
+                    last_login: parse_datetime_opt(row.get::<_, Option<String>>(4)?)?,
                 })
             })
             .optional()?;
@@ -61,23 +56,17 @@ impl<'a> UserStore<'a> {
     /// Find user by username
     pub fn find_by_username(&self, username: &str) -> Result<Option<User>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, username, password_hash, created_at, last_login FROM users WHERE username = ?1"
+            "SELECT id, username, password_hash, created_at, last_login FROM users WHERE username = ?1",
         )?;
 
         let user = stmt
             .query_row(params![username], |row| {
                 Ok(User {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     username: row.get(1)?,
                     password_hash: row.get(2)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    last_login: row.get::<_, Option<String>>(4)?.map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .unwrap()
-                            .with_timezone(&Utc)
-                    }),
+                    created_at: parse_datetime(&row.get::<_, String>(3)?)?,
+                    last_login: parse_datetime_opt(row.get::<_, Option<String>>(4)?)?,
                 })
             })
             .optional()?;
@@ -111,21 +100,17 @@ impl<'a> UserStore<'a> {
     /// Find valid session
     pub fn find_valid_session(&self, session_id: Uuid) -> Result<Option<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ?1 AND expires_at > ?2"
+            "SELECT id, user_id, created_at, expires_at FROM sessions WHERE id = ?1 AND expires_at > ?2",
         )?;
 
         let now = Utc::now().to_rfc3339();
         let session = stmt
             .query_row(params![session_id.to_string(), now], |row| {
                 Ok(Session {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    user_id: parse_uuid(&row.get::<_, String>(1)?)?,
+                    created_at: parse_datetime(&row.get::<_, String>(2)?)?,
+                    expires_at: parse_datetime(&row.get::<_, String>(3)?)?,
                 })
             })
             .optional()?;
@@ -158,20 +143,5 @@ impl<'a> UserStore<'a> {
             params![Utc::now().to_rfc3339()],
         )?;
         Ok(count as u64)
-    }
-}
-
-/// Extension trait for optional query results
-trait OptionalExt<T> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error>;
-}
-
-impl<T> OptionalExt<T> for std::result::Result<T, rusqlite::Error> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }

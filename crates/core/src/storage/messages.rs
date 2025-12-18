@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+use super::parse::{parse_datetime, parse_datetime_opt, parse_uuid, role_from_u8, OptionalExt};
 use crate::error::Result;
 use crate::models::{HallRole, Message, MessageDisplay};
 
@@ -44,18 +45,12 @@ impl<'a> MessageStore<'a> {
         let message = stmt
             .query_row(params![id.to_string()], |row| {
                 Ok(Message {
-                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                    sender_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    hall_id: parse_uuid(&row.get::<_, String>(1)?)?,
+                    sender_id: parse_uuid(&row.get::<_, String>(2)?)?,
                     content: row.get(3)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    edited_at: row.get::<_, Option<String>>(5)?.map(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .unwrap()
-                            .with_timezone(&Utc)
-                    }),
+                    created_at: parse_datetime(&row.get::<_, String>(4)?)?,
+                    edited_at: parse_datetime_opt(row.get::<_, Option<String>>(5)?)?,
                     is_deleted: row.get::<_, i32>(6)? != 0,
                 })
             })
@@ -113,16 +108,14 @@ impl<'a> MessageStore<'a> {
 
     fn map_message_display(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageDisplay> {
         Ok(MessageDisplay {
-            id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             sender_username: row.get(1)?,
             sender_role: row
                 .get::<_, Option<u8>>(2)?
                 .map(role_from_u8)
                 .unwrap_or(HallRole::HallFellow),
             content: row.get(3)?,
-            timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            timestamp: parse_datetime(&row.get::<_, String>(4)?)?,
             is_edited: row.get::<_, Option<String>>(5)?.is_some(),
         })
     }
@@ -153,29 +146,5 @@ impl<'a> MessageStore<'a> {
             |row| row.get(0),
         )?;
         Ok(count as u64)
-    }
-}
-
-fn role_from_u8(value: u8) -> HallRole {
-    match value {
-        5 => HallRole::HallBuilder,
-        4 => HallRole::HallPrefect,
-        3 => HallRole::HallModerator,
-        2 => HallRole::HallAgent,
-        _ => HallRole::HallFellow,
-    }
-}
-
-trait OptionalExt<T> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error>;
-}
-
-impl<T> OptionalExt<T> for std::result::Result<T, rusqlite::Error> {
-    fn optional(self) -> std::result::Result<Option<T>, rusqlite::Error> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }
