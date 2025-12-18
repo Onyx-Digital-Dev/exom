@@ -47,6 +47,9 @@ export component MainWindow inherits Window {
     in-out property <[SwitcherHallItem]> switcher-halls: [];
     property <bool> show-switcher: false;
 
+    // Keyboard navigation state
+    property <int> selected-hall-index: -1;
+
     // Auth callbacks
     callback login(string, string);
     callback register(string, string);
@@ -130,6 +133,7 @@ export component MainWindow inherits Window {
                 halls: root.halls;
                 current-hall-id: root.current-hall-id;
                 error-text: root.hall-error;
+                keyboard-selected-index: root.selected-hall-index;
                 select-hall(id) => {
                     root.select-hall(id);
                     // Focus chat input after selecting hall
@@ -191,6 +195,34 @@ export component MainWindow inherits Window {
                     hall-switcher.focus-search();
                     return accept;
                 }
+                // Alt+J: Move selection down in halls list
+                if event.modifiers.alt && event.text == "j" {
+                    if root.halls.length > 0 {
+                        if root.selected-hall-index < root.halls.length - 1 {
+                            root.selected-hall-index = root.selected-hall-index + 1;
+                        }
+                    }
+                    return accept;
+                }
+                // Alt+K: Move selection up in halls list
+                if event.modifiers.alt && event.text == "k" {
+                    if root.halls.length > 0 {
+                        if root.selected-hall-index > 0 {
+                            root.selected-hall-index = root.selected-hall-index - 1;
+                        } else if root.selected-hall-index == -1 {
+                            root.selected-hall-index = 0;
+                        }
+                    }
+                    return accept;
+                }
+                // Alt+Enter: Activate selected hall
+                if event.modifiers.alt && event.text == Key.Return {
+                    if root.selected-hall-index >= 0 && root.selected-hall-index < root.halls.length {
+                        root.select-hall(root.halls[root.selected-hall-index].id);
+                        chat-panel.focus-input();
+                    }
+                    return accept;
+                }
                 // Esc: Close any open modal and return focus to chat
                 if event.text == Key.Escape {
                     if root.show-switcher {
@@ -200,6 +232,11 @@ export component MainWindow inherits Window {
                         }
                         return accept;
                     }
+                    // Always focus chat on Esc
+                    if root.current-hall-id != "" {
+                        chat-panel.focus-input();
+                    }
+                    return accept;
                 }
                 return reject;
             }

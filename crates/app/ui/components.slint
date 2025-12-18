@@ -387,10 +387,15 @@ export component PanelHeader inherits Rectangle {
 // List item base
 export component ListItem inherits Rectangle {
     in property <bool> selected: false;
+    in property <bool> keyboard-focused: false;
 
     callback clicked();
 
-    background: root.selected ? Theme.color-accent-muted : (touch.has-hover ? Theme.color-panel-hover : transparent);
+    background: root.selected ? Theme.color-accent-muted :
+                root.keyboard-focused ? Theme.color-panel-elevated :
+                (touch.has-hover ? Theme.color-panel-hover : transparent);
+    border-color: root.keyboard-focused ? Theme.color-border-focus : transparent;
+    border-width: root.keyboard-focused ? 1px : 0;
     height: 36px;
     border-radius: Theme.radius-sm;
 
