@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use exom_core::{HallRole, PermissionMatrix, HallAction};
+use exom_core::{HallAction, HallRole, PermissionMatrix};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 use crate::state::AppState;
+use crate::ChestFileItem;
 use crate::MainWindow;
 use crate::MemberItem;
-use crate::ChestFileItem;
 
 pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
     // Load members
@@ -26,15 +26,16 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             Err(_) => return,
         };
 
-        let member_items: Vec<MemberItem> = members.iter().map(|m| {
-            MemberItem {
+        let member_items: Vec<MemberItem> = members
+            .iter()
+            .map(|m| MemberItem {
                 id: m.user_id.to_string().into(),
                 name: m.username.clone().into(),
                 role: m.role.display_name().into(),
                 is_online: m.is_online,
                 is_host: m.is_host,
-            }
-        }).collect();
+            })
+            .collect();
 
         drop(db);
 
@@ -95,11 +96,9 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
 
         // Init chest if promoted to Agent
         if new_role == HallRole::HallAgent {
-            if let Ok(hall) = state_promote.db.lock().unwrap().halls().find_by_id(hall_id) {
-                if let Some(hall) = hall {
-                    let chest = state_promote.chest.lock().unwrap();
-                    let _ = chest.init_hall_chest(hall_id, &hall.name, new_role);
-                }
+            if let Ok(Some(hall)) = state_promote.db.lock().unwrap().halls().find_by_id(hall_id) {
+                let chest = state_promote.chest.lock().unwrap();
+                let _ = chest.init_hall_chest(hall_id, &hall.name, new_role);
             }
         }
 
@@ -247,14 +246,15 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             }
         };
 
-        let file_items: Vec<ChestFileItem> = files.iter().map(|f| {
-            ChestFileItem {
+        let file_items: Vec<ChestFileItem> = files
+            .iter()
+            .map(|f| ChestFileItem {
                 name: f.name.clone().into(),
                 is_directory: f.is_directory,
                 size: format_size(f.size_bytes).into(),
                 sync_status: f.sync_status.display().into(),
-            }
-        }).collect();
+            })
+            .collect();
 
         let chest_path = chest.hall_path(hall_id);
         drop(chest);

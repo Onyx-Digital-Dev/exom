@@ -5,8 +5,8 @@
 
 use uuid::Uuid;
 
-use crate::models::{HallRole, MemberInfo};
 use crate::error::{Error, Result};
+use crate::models::{HallRole, MemberInfo};
 
 /// Hosting state for a Hall
 #[derive(Debug, Clone)]
@@ -104,9 +104,7 @@ impl HostingState {
             .collect();
 
         // Sort by role priority (highest first)
-        candidates.sort_by(|a, b| {
-            b.role.hosting_priority().cmp(&a.role.hosting_priority())
-        });
+        candidates.sort_by(|a, b| b.role.hosting_priority().cmp(&a.role.hosting_priority()));
 
         if let Some(candidate) = candidates.first() {
             HostElectionResult::PromptTakeover(candidate.user_id)
@@ -150,7 +148,9 @@ mod tests {
         let mut state = HostingState::new();
         let user_id = Uuid::new_v4();
 
-        assert!(state.try_become_initial_host(user_id, HallRole::HallAgent).unwrap());
+        assert!(state
+            .try_become_initial_host(user_id, HallRole::HallAgent)
+            .unwrap());
         assert!(state.is_host(user_id));
     }
 
@@ -159,21 +159,25 @@ mod tests {
         let mut state = HostingState::new();
         let user_id = Uuid::new_v4();
 
-        assert!(!state.try_become_initial_host(user_id, HallRole::HallFellow).unwrap());
+        assert!(!state
+            .try_become_initial_host(user_id, HallRole::HallFellow)
+            .unwrap());
         assert!(!state.is_host(user_id));
     }
 
     #[test]
     fn test_higher_role_prompt() {
-        let state = HostingState::new();
+        let mut state = HostingState::new();
+        let existing_host = Uuid::new_v4();
+        state.set_host(Some(existing_host));
 
         let builder_id = Uuid::new_v4();
-        let result = state.on_user_join(
-            builder_id,
-            HallRole::HallBuilder,
-            Some(HallRole::HallAgent),
-        );
+        let result =
+            state.on_user_join(builder_id, HallRole::HallBuilder, Some(HallRole::HallAgent));
 
-        assert!(matches!(result, Some(HostElectionResult::PromptTakeover(_))));
+        assert!(matches!(
+            result,
+            Some(HostElectionResult::PromptTakeover(_))
+        ));
     }
 }

@@ -2,16 +2,16 @@
 //!
 //! Core models, permissions, hosting logic, and storage for the Exom platform.
 
+pub mod chest;
 pub mod error;
+pub mod hosting;
 pub mod models;
 pub mod permissions;
-pub mod hosting;
 pub mod storage;
-pub mod chest;
 
+pub use chest::HallChest;
 pub use error::{Error, Result};
+pub use hosting::*;
 pub use models::*;
 pub use permissions::*;
-pub use hosting::*;
 pub use storage::Database;
-pub use chest::HallChest;

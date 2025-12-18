@@ -1,13 +1,13 @@
 //! View model bindings for Slint UI
 
 mod auth;
-mod halls;
 mod chat;
+mod halls;
 mod members;
 
-use std::sync::Arc;
 use crate::state::AppState;
 use crate::MainWindow;
+use std::sync::Arc;
 
 pub fn setup_bindings(window: &MainWindow, state: AppState) {
     let state = Arc::new(state);

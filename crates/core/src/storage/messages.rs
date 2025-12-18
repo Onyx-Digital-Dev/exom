@@ -1,11 +1,11 @@
 //! Message storage operations
 
-use rusqlite::{Connection, params};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
+use uuid::Uuid;
 
-use crate::models::{Message, MessageDisplay, HallRole};
 use crate::error::Result;
+use crate::models::{HallRole, Message, MessageDisplay};
 
 pub struct MessageStore<'a> {
     conn: &'a Connection,
@@ -38,29 +38,39 @@ impl<'a> MessageStore<'a> {
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<Message>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, hall_id, sender_id, content, created_at, edited_at, is_deleted
-             FROM messages WHERE id = ?1"
+             FROM messages WHERE id = ?1",
         )?;
 
-        let message = stmt.query_row(params![id.to_string()], |row| {
-            Ok(Message {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                sender_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
-                content: row.get(3)?,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                edited_at: row.get::<_, Option<String>>(5)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
-                is_deleted: row.get::<_, i32>(6)? != 0,
+        let message = stmt
+            .query_row(params![id.to_string()], |row| {
+                Ok(Message {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    sender_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
+                    content: row.get(3)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    edited_at: row.get::<_, Option<String>>(5)?.map(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .unwrap()
+                            .with_timezone(&Utc)
+                    }),
+                    is_deleted: row.get::<_, i32>(6)? != 0,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(message)
     }
 
     /// List messages for a Hall with display info
-    pub fn list_for_hall(&self, hall_id: Uuid, limit: u32, before: Option<DateTime<Utc>>) -> Result<Vec<MessageDisplay>> {
+    pub fn list_for_hall(
+        &self,
+        hall_id: Uuid,
+        limit: u32,
+        before: Option<DateTime<Utc>>,
+    ) -> Result<Vec<MessageDisplay>> {
         let query = if before.is_some() {
             "SELECT m.id, u.username, mb.role, m.content, m.created_at, m.edited_at
              FROM messages m
@@ -85,12 +95,14 @@ impl<'a> MessageStore<'a> {
             stmt.query_map(
                 params![hall_id.to_string(), before_time.to_rfc3339(), limit],
                 Self::map_message_display,
-            )?.collect::<std::result::Result<Vec<_>, _>>()?
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?
         } else {
             stmt.query_map(
                 params![hall_id.to_string(), limit],
                 Self::map_message_display,
-            )?.collect::<std::result::Result<Vec<_>, _>>()?
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?
         };
 
         // Reverse to get chronological order
@@ -103,7 +115,8 @@ impl<'a> MessageStore<'a> {
         Ok(MessageDisplay {
             id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
             sender_username: row.get(1)?,
-            sender_role: row.get::<_, Option<u8>>(2)?
+            sender_role: row
+                .get::<_, Option<u8>>(2)?
                 .map(role_from_u8)
                 .unwrap_or(HallRole::HallFellow),
             content: row.get(3)?,

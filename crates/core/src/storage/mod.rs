@@ -1,19 +1,19 @@
 //! SQLite storage layer for Exom
 
+mod halls;
+mod invites;
+mod messages;
 mod schema;
 mod users;
-mod halls;
-mod messages;
-mod invites;
 
-use std::path::Path;
-use rusqlite::Connection;
 use crate::error::Result;
+use rusqlite::Connection;
+use std::path::Path;
 
-pub use users::UserStore;
 pub use halls::HallStore;
-pub use messages::MessageStore;
 pub use invites::InviteStore;
+pub use messages::MessageStore;
+pub use users::UserStore;
 
 /// Main database handle
 pub struct Database {

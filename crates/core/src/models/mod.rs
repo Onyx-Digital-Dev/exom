@@ -1,15 +1,15 @@
 //! Data models for Exom
 
-mod user;
 mod hall;
+mod invite;
 mod membership;
 mod message;
-mod invite;
 mod parlor;
+mod user;
 
-pub use user::*;
 pub use hall::*;
+pub use invite::*;
 pub use membership::*;
 pub use message::*;
-pub use invite::*;
 pub use parlor::*;
+pub use user::*;

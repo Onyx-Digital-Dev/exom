@@ -71,22 +71,28 @@ impl HallChest {
 
     /// Get default base path for Hall Chests
     fn default_base_path() -> Result<PathBuf> {
-        let dirs = ProjectDirs::from("dev", "onyx", "exom")
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+        let dirs = ProjectDirs::from("dev", "onyx", "exom").ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "Could not determine config directory",
-            )))?;
+            ))
+        })?;
 
         Ok(dirs.data_dir().join("chests"))
     }
 
     /// Initialize chest folders for a Hall
     /// Called when user joins as Agent or higher
-    pub fn init_hall_chest(&self, hall_id: Uuid, hall_name: &str, role: HallRole) -> Result<PathBuf> {
+    pub fn init_hall_chest(
+        &self,
+        hall_id: Uuid,
+        hall_name: &str,
+        role: HallRole,
+    ) -> Result<PathBuf> {
         // Fellows don't get chest access
         if role < HallRole::HallAgent {
             return Err(Error::PermissionDenied(
-                "Fellows do not have Hall Chest access".into()
+                "Fellows do not have Hall Chest access".into(),
             ));
         }
 
@@ -158,12 +164,10 @@ impl HallChest {
         }
 
         // Sort: directories first, then by name
-        entries.sort_by(|a, b| {
-            match (a.is_directory, b.is_directory) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.cmp(&b.name),
-            }
+        entries.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
         });
 
         Ok(entries)
@@ -242,7 +246,9 @@ mod tests {
         let chest = HallChest::with_base_path(dir.path().to_path_buf()).unwrap();
 
         let hall_id = Uuid::new_v4();
-        let path = chest.init_hall_chest(hall_id, "Test Hall", HallRole::HallAgent).unwrap();
+        let path = chest
+            .init_hall_chest(hall_id, "Test Hall", HallRole::HallAgent)
+            .unwrap();
 
         assert!(path.exists());
         assert!(path.join("shared").exists());

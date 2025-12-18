@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use exom_core::{Hall, Membership, HallRole, Invite, HostingState, HostElectionResult};
+use exom_core::{Hall, HallRole, HostElectionResult, HostingState, Invite, Membership};
 use rand::Rng;
-use slint::{ComponentHandle, ModelRc, VecModel, SharedString};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::state::AppState;
-use crate::MainWindow;
 use crate::HallItem;
+use crate::MainWindow;
 
 pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
     // Load halls
@@ -26,18 +26,23 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
             Err(_) => return,
         };
 
-        let hall_items: Vec<HallItem> = halls.iter().map(|h| {
-            let role = db.halls().get_user_role(user_id, h.id)
-                .ok()
-                .flatten()
-                .unwrap_or(HallRole::HallFellow);
+        let hall_items: Vec<HallItem> = halls
+            .iter()
+            .map(|h| {
+                let role = db
+                    .halls()
+                    .get_user_role(user_id, h.id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or(HallRole::HallFellow);
 
-            HallItem {
-                id: h.id.to_string().into(),
-                name: h.name.clone().into(),
-                role: role.short_name().into(),
-            }
-        }).collect();
+                HallItem {
+                    id: h.id.to_string().into(),
+                    name: h.name.clone().into(),
+                    role: role.short_name().into(),
+                }
+            })
+            .collect();
 
         drop(db);
 
@@ -151,7 +156,8 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
             if host_id == user_id {
                 "You".into()
             } else {
-                db.users().find_by_id(host_id)
+                db.users()
+                    .find_by_id(host_id)
                     .ok()
                     .flatten()
                     .map(|u| u.username)
@@ -268,8 +274,7 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
             .map(char::from)
             .collect();
 
-        let invite = Invite::new(hall_id, user_id, role, token.clone())
-            .with_expiry(24 * 7); // 1 week
+        let invite = Invite::new(hall_id, user_id, role, token.clone()).with_expiry(24 * 7); // 1 week
 
         let db = state_invite.db.lock().unwrap();
         if db.invites().create(&invite).is_err() {

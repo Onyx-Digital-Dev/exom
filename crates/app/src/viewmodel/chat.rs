@@ -25,16 +25,17 @@ pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
             Err(_) => return,
         };
 
-        let message_items: Vec<MessageItem> = messages.iter().map(|m| {
-            MessageItem {
+        let message_items: Vec<MessageItem> = messages
+            .iter()
+            .map(|m| MessageItem {
                 id: m.id.to_string().into(),
                 sender_name: m.sender_username.clone().into(),
                 sender_role: m.sender_role.short_name().into(),
                 content: m.content.clone().into(),
                 timestamp: m.format_timestamp().into(),
                 is_edited: m.is_edited,
-            }
-        }).collect();
+            })
+            .collect();
 
         drop(db);
 

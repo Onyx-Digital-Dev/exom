@@ -1,11 +1,11 @@
 //! Hall storage operations
 
-use rusqlite::{Connection, params};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
+use uuid::Uuid;
 
-use crate::models::{Hall, Membership, HallRole, MemberInfo, ParlorId};
 use crate::error::Result;
+use crate::models::{Hall, HallRole, MemberInfo, Membership, ParlorId};
 
 pub struct HallStore<'a> {
     conn: &'a Connection,
@@ -42,22 +42,26 @@ impl<'a> HallStore<'a> {
              FROM halls WHERE id = ?1"
         )?;
 
-        let hall = stmt.query_row(params![id.to_string()], |row| {
-            Ok(Hall {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                name: row.get(1)?,
-                description: row.get(2)?,
-                owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                active_parlor: row.get::<_, Option<String>>(5)?
-                    .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
-                current_host_id: row.get::<_, Option<String>>(6)?
-                    .map(|s| Uuid::parse_str(&s).unwrap()),
-                election_epoch: row.get(7)?,
+        let hall = stmt
+            .query_row(params![id.to_string()], |row| {
+                Ok(Hall {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    active_parlor: row
+                        .get::<_, Option<String>>(5)?
+                        .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
+                    current_host_id: row
+                        .get::<_, Option<String>>(6)?
+                        .map(|s| Uuid::parse_str(&s).unwrap()),
+                    election_epoch: row.get(7)?,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(hall)
     }
@@ -98,22 +102,26 @@ impl<'a> HallStore<'a> {
              ORDER BY h.name"
         )?;
 
-        let halls = stmt.query_map(params![user_id.to_string()], |row| {
-            Ok(Hall {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                name: row.get(1)?,
-                description: row.get(2)?,
-                owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                active_parlor: row.get::<_, Option<String>>(5)?
-                    .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
-                current_host_id: row.get::<_, Option<String>>(6)?
-                    .map(|s| Uuid::parse_str(&s).unwrap()),
-                election_epoch: row.get(7)?,
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let halls = stmt
+            .query_map(params![user_id.to_string()], |row| {
+                Ok(Hall {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    owner_id: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    active_parlor: row
+                        .get::<_, Option<String>>(5)?
+                        .map(|s| ParlorId(Uuid::parse_str(&s).unwrap())),
+                    current_host_id: row
+                        .get::<_, Option<String>>(6)?
+                        .map(|s| Uuid::parse_str(&s).unwrap()),
+                    election_epoch: row.get(7)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(halls)
     }
@@ -139,21 +147,23 @@ impl<'a> HallStore<'a> {
     pub fn get_membership(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<Membership>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, user_id, hall_id, role, joined_at, is_online FROM memberships
-             WHERE user_id = ?1 AND hall_id = ?2"
+             WHERE user_id = ?1 AND hall_id = ?2",
         )?;
 
-        let membership = stmt.query_row(params![user_id.to_string(), hall_id.to_string()], |row| {
-            Ok(Membership {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                hall_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
-                role: role_from_u8(row.get::<_, u8>(3)?),
-                joined_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                is_online: row.get::<_, i32>(5)? != 0,
+        let membership = stmt
+            .query_row(params![user_id.to_string(), hall_id.to_string()], |row| {
+                Ok(Membership {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    hall_id: Uuid::parse_str(&row.get::<_, String>(2)?).unwrap(),
+                    role: role_from_u8(row.get::<_, u8>(3)?),
+                    joined_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    is_online: row.get::<_, i32>(5)? != 0,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(membership)
     }
@@ -168,7 +178,12 @@ impl<'a> HallStore<'a> {
     }
 
     /// Update online status
-    pub fn update_online_status(&self, user_id: Uuid, hall_id: Uuid, is_online: bool) -> Result<()> {
+    pub fn update_online_status(
+        &self,
+        user_id: Uuid,
+        hall_id: Uuid,
+        is_online: bool,
+    ) -> Result<()> {
         self.conn.execute(
             "UPDATE memberships SET is_online = ?1 WHERE user_id = ?2 AND hall_id = ?3",
             params![is_online as i32, user_id.to_string(), hall_id.to_string()],
@@ -193,22 +208,25 @@ impl<'a> HallStore<'a> {
              INNER JOIN users u ON u.id = m.user_id
              INNER JOIN halls h ON h.id = m.hall_id
              WHERE m.hall_id = ?1
-             ORDER BY m.role DESC, u.username"
+             ORDER BY m.role DESC, u.username",
         )?;
 
-        let members = stmt.query_map(params![hall_id.to_string()], |row| {
-            let user_id = Uuid::parse_str(&row.get::<_, String>(0)?).unwrap();
-            let host_id = row.get::<_, Option<String>>(4)?
-                .map(|s| Uuid::parse_str(&s).unwrap());
+        let members = stmt
+            .query_map(params![hall_id.to_string()], |row| {
+                let user_id = Uuid::parse_str(&row.get::<_, String>(0)?).unwrap();
+                let host_id = row
+                    .get::<_, Option<String>>(4)?
+                    .map(|s| Uuid::parse_str(&s).unwrap());
 
-            Ok(MemberInfo {
-                user_id,
-                username: row.get(1)?,
-                role: role_from_u8(row.get::<_, u8>(2)?),
-                is_online: row.get::<_, i32>(3)? != 0,
-                is_host: host_id == Some(user_id),
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(MemberInfo {
+                    user_id,
+                    username: row.get(1)?,
+                    role: role_from_u8(row.get::<_, u8>(2)?),
+                    is_online: row.get::<_, i32>(3)? != 0,
+                    is_host: host_id == Some(user_id),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(members)
     }

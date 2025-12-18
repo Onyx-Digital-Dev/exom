@@ -82,7 +82,11 @@ impl PermissionMatrix {
     }
 
     /// Check if a role can promote/demote to a target role
-    pub fn can_change_role(actor_role: HallRole, _target_current: HallRole, target_new: HallRole) -> bool {
+    pub fn can_change_role(
+        actor_role: HallRole,
+        _target_current: HallRole,
+        target_new: HallRole,
+    ) -> bool {
         // Can only assign roles lower than your own
         if target_new >= actor_role {
             return false;
@@ -110,16 +114,34 @@ mod tests {
 
     #[test]
     fn test_builder_permissions() {
-        assert!(PermissionMatrix::can_perform(HallRole::HallBuilder, HallAction::DeleteHall));
-        assert!(PermissionMatrix::can_perform(HallRole::HallBuilder, HallAction::TransferOwnership));
-        assert!(PermissionMatrix::can_perform(HallRole::HallBuilder, HallAction::InviteMembers));
+        assert!(PermissionMatrix::can_perform(
+            HallRole::HallBuilder,
+            HallAction::DeleteHall
+        ));
+        assert!(PermissionMatrix::can_perform(
+            HallRole::HallBuilder,
+            HallAction::TransferOwnership
+        ));
+        assert!(PermissionMatrix::can_perform(
+            HallRole::HallBuilder,
+            HallAction::InviteMembers
+        ));
     }
 
     #[test]
     fn test_fellow_permissions() {
-        assert!(PermissionMatrix::can_perform(HallRole::HallFellow, HallAction::SendMessages));
-        assert!(!PermissionMatrix::can_perform(HallRole::HallFellow, HallAction::BecomeHost));
-        assert!(!PermissionMatrix::can_perform(HallRole::HallFellow, HallAction::ViewChest));
+        assert!(PermissionMatrix::can_perform(
+            HallRole::HallFellow,
+            HallAction::SendMessages
+        ));
+        assert!(!PermissionMatrix::can_perform(
+            HallRole::HallFellow,
+            HallAction::BecomeHost
+        ));
+        assert!(!PermissionMatrix::can_perform(
+            HallRole::HallFellow,
+            HallAction::ViewChest
+        ));
     }
 
     #[test]

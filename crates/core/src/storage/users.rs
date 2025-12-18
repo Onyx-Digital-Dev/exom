@@ -1,11 +1,11 @@
 //! User storage operations
 
-use rusqlite::{Connection, params};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
+use uuid::Uuid;
 
-use crate::models::{User, Session};
 use crate::error::Result;
+use crate::models::{Session, User};
 
 pub struct UserStore<'a> {
     conn: &'a Connection,
@@ -34,21 +34,26 @@ impl<'a> UserStore<'a> {
     /// Find user by ID
     pub fn find_by_id(&self, id: Uuid) -> Result<Option<User>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, username, password_hash, created_at, last_login FROM users WHERE id = ?1"
+            "SELECT id, username, password_hash, created_at, last_login FROM users WHERE id = ?1",
         )?;
 
-        let user = stmt.query_row(params![id.to_string()], |row| {
-            Ok(User {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                username: row.get(1)?,
-                password_hash: row.get(2)?,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                last_login: row.get::<_, Option<String>>(4)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
+        let user = stmt
+            .query_row(params![id.to_string()], |row| {
+                Ok(User {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    username: row.get(1)?,
+                    password_hash: row.get(2)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    last_login: row.get::<_, Option<String>>(4)?.map(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .unwrap()
+                            .with_timezone(&Utc)
+                    }),
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(user)
     }
@@ -59,18 +64,23 @@ impl<'a> UserStore<'a> {
             "SELECT id, username, password_hash, created_at, last_login FROM users WHERE username = ?1"
         )?;
 
-        let user = stmt.query_row(params![username], |row| {
-            Ok(User {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                username: row.get(1)?,
-                password_hash: row.get(2)?,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                last_login: row.get::<_, Option<String>>(4)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
+        let user = stmt
+            .query_row(params![username], |row| {
+                Ok(User {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    username: row.get(1)?,
+                    password_hash: row.get(2)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    last_login: row.get::<_, Option<String>>(4)?.map(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .unwrap()
+                            .with_timezone(&Utc)
+                    }),
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(user)
     }
@@ -105,18 +115,20 @@ impl<'a> UserStore<'a> {
         )?;
 
         let now = Utc::now().to_rfc3339();
-        let session = stmt.query_row(params![session_id.to_string(), now], |row| {
-            Ok(Session {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
+        let session = stmt
+            .query_row(params![session_id.to_string(), now], |row| {
+                Ok(Session {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    user_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(session)
     }

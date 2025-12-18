@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use directories::ProjectDirs;
-use exom_core::{Database, HallChest, Result, Error};
+use exom_core::{Database, Error, HallChest, Result};
 use uuid::Uuid;
 
 /// Main application state
@@ -38,11 +38,12 @@ impl AppState {
     }
 
     fn data_path() -> Result<PathBuf> {
-        let dirs = ProjectDirs::from("dev", "onyx", "exom")
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+        let dirs = ProjectDirs::from("dev", "onyx", "exom").ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "Could not determine data directory",
-            )))?;
+            ))
+        })?;
 
         Ok(dirs.data_dir().to_path_buf())
     }

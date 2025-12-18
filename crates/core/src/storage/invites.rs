@@ -1,11 +1,11 @@
 //! Invite storage operations
 
-use rusqlite::{Connection, params};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
+use uuid::Uuid;
 
-use crate::models::{Invite, HallRole};
 use crate::error::Result;
+use crate::models::{HallRole, Invite};
 
 pub struct InviteStore<'a> {
     conn: &'a Connection,
@@ -44,23 +44,28 @@ impl<'a> InviteStore<'a> {
              FROM invites WHERE token = ?1"
         )?;
 
-        let invite = stmt.query_row(params![token], |row| {
-            Ok(Invite {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                token: row.get(2)?,
-                created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                role: role_from_u8(row.get::<_, u8>(4)?),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                expires_at: row.get::<_, Option<String>>(6)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
-                max_uses: row.get(7)?,
-                use_count: row.get(8)?,
-                is_revoked: row.get::<_, i32>(9)? != 0,
+        let invite = stmt
+            .query_row(params![token], |row| {
+                Ok(Invite {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    token: row.get(2)?,
+                    created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    role: role_from_u8(row.get::<_, u8>(4)?),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    expires_at: row.get::<_, Option<String>>(6)?.map(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .unwrap()
+                            .with_timezone(&Utc)
+                    }),
+                    max_uses: row.get(7)?,
+                    use_count: row.get(8)?,
+                    is_revoked: row.get::<_, i32>(9)? != 0,
+                })
             })
-        }).optional()?;
+            .optional()?;
 
         Ok(invite)
     }
@@ -72,23 +77,28 @@ impl<'a> InviteStore<'a> {
              FROM invites WHERE hall_id = ?1 ORDER BY created_at DESC"
         )?;
 
-        let invites = stmt.query_map(params![hall_id.to_string()], |row| {
-            Ok(Invite {
-                id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
-                token: row.get(2)?,
-                created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
-                role: role_from_u8(row.get::<_, u8>(4)?),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                    .unwrap()
-                    .with_timezone(&Utc),
-                expires_at: row.get::<_, Option<String>>(6)?
-                    .map(|s| DateTime::parse_from_rfc3339(&s).unwrap().with_timezone(&Utc)),
-                max_uses: row.get(7)?,
-                use_count: row.get(8)?,
-                is_revoked: row.get::<_, i32>(9)? != 0,
-            })
-        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        let invites = stmt
+            .query_map(params![hall_id.to_string()], |row| {
+                Ok(Invite {
+                    id: Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    hall_id: Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+                    token: row.get(2)?,
+                    created_by: Uuid::parse_str(&row.get::<_, String>(3)?).unwrap(),
+                    role: role_from_u8(row.get::<_, u8>(4)?),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    expires_at: row.get::<_, Option<String>>(6)?.map(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .unwrap()
+                            .with_timezone(&Utc)
+                    }),
+                    max_uses: row.get(7)?,
+                    use_count: row.get(8)?,
+                    is_revoked: row.get::<_, i32>(9)? != 0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(invites)
     }

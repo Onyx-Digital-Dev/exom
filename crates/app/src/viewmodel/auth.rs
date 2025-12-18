@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use slint::ComponentHandle;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use exom_core::{User, Session};
+use exom_core::{Session, User};
+use slint::ComponentHandle;
 
 use crate::state::AppState;
 use crate::MainWindow;
@@ -52,7 +52,10 @@ pub fn setup_auth_bindings(window: &MainWindow, state: Arc<AppState>) {
             }
         };
 
-        if argon2.verify_password(password.as_bytes(), &parsed_hash).is_err() {
+        if argon2
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_err()
+        {
             if let Some(w) = window_weak.upgrade() {
                 w.set_auth_error("Invalid password".into());
             }
