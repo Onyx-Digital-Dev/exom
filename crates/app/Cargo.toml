@@ -6,6 +6,7 @@ build = "build.rs"
 
 [dependencies]
 exom-core = { path = "../core" }
+exom-net = { path = "../net" }
 slint = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

@@ -5,13 +5,19 @@ use std::sync::Arc;
 use exom_core::{Hall, HallRole, HostElectionResult, HostingState, Invite, Membership};
 use rand::Rng;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use tokio::sync::Mutex;
 
+use crate::network::NetworkManager;
 use crate::state::AppState;
 use crate::HallItem;
 use crate::MainWindow;
 use crate::SwitcherHallItem;
 
-pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
+pub fn setup_hall_bindings(
+    window: &MainWindow,
+    state: Arc<AppState>,
+    _network_manager: Arc<Mutex<NetworkManager>>,
+) {
     // Load halls
     let state_load = state.clone();
     let window_weak = window.as_weak();

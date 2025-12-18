@@ -29,11 +29,13 @@
 pub mod client;
 pub mod error;
 mod frame;
+pub mod invite;
 pub mod protocol;
 pub mod server;
 
 pub use client::{Client, ConnectionState, ServerEvent};
 pub use error::{Error, Result};
+pub use invite::InviteUrl;
 pub use protocol::{Message, NetMessage, NetRole, PeerInfo};
 pub use server::Server;
 

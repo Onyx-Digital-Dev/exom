@@ -3,8 +3,11 @@
 //! A Wayland-first desktop application for hall-based collaboration.
 //! Supports X11 via XWayland for compatibility.
 
+use std::sync::Arc;
+
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod network;
 mod platform;
 mod state;
 mod viewmodel;
@@ -23,6 +26,10 @@ fn main() {
     // Log platform and display server information
     platform::log_platform_info();
 
+    // Initialize tokio runtime for networking
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    let _guard = runtime.enter();
+
     // Initialize application state
     let app_state = match state::AppState::new() {
         Ok(state) => state,
@@ -32,11 +39,14 @@ fn main() {
         }
     };
 
+    // Initialize network manager
+    let network_manager = Arc::new(tokio::sync::Mutex::new(network::NetworkManager::new()));
+
     // Create main window
     let main_window = MainWindow::new().unwrap();
 
     // Set up view model bindings
-    viewmodel::setup_bindings(&main_window, app_state);
+    viewmodel::setup_bindings(&main_window, app_state, network_manager);
 
     // Run the application
     main_window.run().unwrap();

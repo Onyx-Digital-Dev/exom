@@ -5,12 +5,18 @@ use std::sync::Arc;
 use chrono::{DateTime, Duration, Utc};
 use exom_core::Message;
 use slint::{ComponentHandle, ModelRc, VecModel};
+use tokio::sync::Mutex;
 
+use crate::network::NetworkManager;
 use crate::state::AppState;
 use crate::MainWindow;
 use crate::MessageItem;
 
-pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
+pub fn setup_chat_bindings(
+    window: &MainWindow,
+    state: Arc<AppState>,
+    _network_manager: Arc<Mutex<NetworkManager>>,
+) {
     // Load messages
     let state_load = state.clone();
     let window_weak = window.as_weak();

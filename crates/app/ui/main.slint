@@ -54,8 +54,15 @@ export component MainWindow inherits Window {
     // Keyboard navigation state
     property <int> selected-hall-index: -1;
 
+    // Network state
+    in-out property <string> network-status: "Offline";
+    in-out property <string> invite-url: "";
+
     // Switcher filtering callback
     callback filter-switcher-halls(string);
+
+    // Network callbacks
+    callback copy-invite();
 
     // Auth callbacks
     callback login(string, string);
@@ -114,6 +121,29 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle { horizontal-stretch: 1; }
+
+                // Network status indicator
+                VerticalLayout {
+                    alignment: center;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        background: root.network-status == "Connected" || root.network-status == "Hosting" ? Theme.color-online : Theme.color-text-dim;
+                    }
+                }
+
+                Rectangle { width: 4px; }
+
+                Text {
+                    text: root.network-status;
+                    color: Theme.color-text-muted;
+                    font-size: Theme.text-xs;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { width: Theme.pad-md; }
 
                 Text {
                     text: root.current-username;
