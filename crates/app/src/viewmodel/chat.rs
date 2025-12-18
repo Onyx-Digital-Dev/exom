@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use exom_core::Message;
+use exom_net::{NetMessage, NetRole};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use tokio::sync::Mutex;
 
-use crate::network::NetworkManager;
+use crate::network::{NetworkManager, NetworkState};
 use crate::state::AppState;
 use crate::MainWindow;
 use crate::MessageItem;
@@ -82,6 +83,7 @@ pub fn setup_chat_bindings(
 
     // Send message
     let state_send = state.clone();
+    let network_manager_send = _network_manager.clone();
     let window_weak = window.as_weak();
     window.on_send_message(move |content| {
         let content = content.to_string().trim().to_string();
@@ -99,13 +101,56 @@ pub fn setup_chat_bindings(
             None => return,
         };
 
-        let message = Message::new(hall_id, user_id, content);
+        let message = Message::new(hall_id, user_id, content.clone());
+        let message_id = message.id;
+        let timestamp = message.created_at;
 
+        // Get user info for network message
+        let (username, role_value) = {
+            let db = state_send.db.lock().unwrap();
+            let username = db
+                .users()
+                .find_by_id(user_id)
+                .ok()
+                .flatten()
+                .map(|u| u.username)
+                .unwrap_or_else(|| "Unknown".to_string());
+            let role = db
+                .halls()
+                .get_user_role(user_id, hall_id)
+                .ok()
+                .flatten()
+                .map(|r| r as u8)
+                .unwrap_or(1);
+            (username, role)
+        };
+
+        // Store locally
         let db = state_send.db.lock().unwrap();
         if db.messages().create(&message).is_err() {
             return;
         }
         drop(db);
+
+        // Send over network if connected
+        let network_manager_clone = network_manager_send.clone();
+        tokio::spawn(async move {
+            if let Ok(nm) = network_manager_clone.try_lock() {
+                let state = nm.state().await;
+                if state == NetworkState::Hosting || state == NetworkState::Connected {
+                    let net_msg = NetMessage {
+                        id: message_id,
+                        hall_id,
+                        sender_id: user_id,
+                        sender_username: username,
+                        sender_role: NetRole::from_value(role_value),
+                        content,
+                        timestamp,
+                    };
+                    let _ = nm.send_chat(net_msg).await;
+                }
+            }
+        });
 
         // Reload messages
         if let Some(w) = window_weak.upgrade() {

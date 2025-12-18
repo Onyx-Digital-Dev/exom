@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use exom_core::{Hall, HallRole, HostElectionResult, HostingState, Invite, Membership};
+use exom_net::{InviteUrl, NetRole, DEFAULT_PORT};
 use rand::Rng;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use tokio::sync::Mutex;
@@ -61,6 +62,7 @@ pub fn setup_hall_bindings(
 
     // Create hall
     let state_create = state.clone();
+    let network_manager_create = _network_manager.clone();
     let window_weak = window.as_weak();
     window.on_create_hall(move |name| {
         let user_id = match state_create.current_user_id() {
@@ -73,12 +75,19 @@ pub fn setup_hall_bindings(
             return;
         }
 
-        let mut hall = Hall::new(name, user_id);
+        let mut hall = Hall::new(name.clone(), user_id);
         let hall_id = hall.id;
 
         // Creator becomes initial host
         hall.current_host_id = Some(user_id);
         hall.election_epoch = 1;
+
+        // Generate token for network
+        let token: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect();
 
         let db = state_create.db.lock().unwrap();
 
@@ -92,12 +101,39 @@ pub fn setup_hall_bindings(
             return;
         }
 
+        // Get username for hosting
+        let username = db
+            .users()
+            .find_by_id(user_id)
+            .ok()
+            .flatten()
+            .map(|u| u.username)
+            .unwrap_or_else(|| "Unknown".to_string());
+
         // Initialize chest
         let chest = state_create.chest.lock().unwrap();
-        let _ = chest.init_hall_chest(hall_id, &hall.name, HallRole::HallBuilder);
+        let _ = chest.init_hall_chest(hall_id, &name, HallRole::HallBuilder);
 
         drop(db);
         drop(chest);
+
+        // Start hosting the hall
+        let network_manager_clone = network_manager_create.clone();
+        let token_clone = token.clone();
+        tokio::spawn(async move {
+            if let Ok(nm) = network_manager_clone.try_lock() {
+                let _ = nm
+                    .start_hosting(
+                        hall_id,
+                        user_id,
+                        username,
+                        NetRole::Builder,
+                        token_clone,
+                        DEFAULT_PORT,
+                    )
+                    .await;
+            }
+        });
 
         // Reload halls
         if let Some(w) = window_weak.upgrade() {
@@ -195,8 +231,9 @@ pub fn setup_hall_bindings(
         }
     });
 
-    // Join via invite
+    // Join via invite (handles both local DB invites and network URLs)
     let state_join = state.clone();
+    let network_manager_join = _network_manager.clone();
     let window_weak = window.as_weak();
     window.on_join_with_invite(move |token| {
         let user_id = match state_join.current_user_id() {
@@ -204,11 +241,52 @@ pub fn setup_hall_bindings(
             None => return,
         };
 
-        let token = token.to_string();
+        let token_str = token.to_string();
+
+        // Check if this is a network invite URL (exom://...)
+        if token_str.starts_with("exom://") {
+            // Parse network invite URL
+            let invite = match InviteUrl::parse(&token_str) {
+                Ok(inv) => inv,
+                Err(e) => {
+                    if let Some(w) = window_weak.upgrade() {
+                        w.set_hall_error(format!("Invalid invite: {}", e).into());
+                    }
+                    return;
+                }
+            };
+
+            // Get username and role for connection
+            let (username, role) = {
+                let db = state_join.db.lock().unwrap();
+                let username = db
+                    .users()
+                    .find_by_id(user_id)
+                    .ok()
+                    .flatten()
+                    .map(|u| u.username)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                // Default to Agent role for network joins
+                (username, NetRole::Agent)
+            };
+
+            // Connect via network
+            let network_manager_clone = network_manager_join.clone();
+            let invite_url = invite.to_url();
+            tokio::spawn(async move {
+                if let Ok(nm) = network_manager_clone.try_lock() {
+                    let _ = nm.connect(invite_url, user_id, username, role).await;
+                }
+            });
+
+            return;
+        }
+
+        // Otherwise, treat as local DB token
         let db = state_join.db.lock().unwrap();
 
         // Find invite
-        let invite = match db.invites().find_by_token(&token) {
+        let invite = match db.invites().find_by_token(&token_str) {
             Ok(Some(inv)) if inv.is_valid() => inv,
             _ => {
                 if let Some(w) = window_weak.upgrade() {

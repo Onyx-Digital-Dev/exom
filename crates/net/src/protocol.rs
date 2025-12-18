@@ -25,6 +25,22 @@ impl NetRole {
     pub fn can_host(self) -> bool {
         self >= NetRole::Agent
     }
+
+    /// Convert from a role value (matches HallRole values)
+    pub fn from_value(v: u8) -> Self {
+        match v {
+            5 => NetRole::Builder,
+            4 => NetRole::Prefect,
+            3 => NetRole::Moderator,
+            2 => NetRole::Agent,
+            _ => NetRole::Fellow,
+        }
+    }
+
+    /// Convert to a role value (matches HallRole values)
+    pub fn to_value(self) -> u8 {
+        self as u8
+    }
 }
 
 /// Information about a connected peer
