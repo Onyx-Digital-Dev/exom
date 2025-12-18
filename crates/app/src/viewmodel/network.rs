@@ -3,13 +3,15 @@
 use std::sync::Arc;
 
 use exom_core::Message;
-use exom_net::NetMessage;
-use slint::ComponentHandle;
+use exom_net::{NetMessage, NetRole, PeerInfo};
+use slint::{ComponentHandle, ModelRc, VecModel};
+
 use tokio::sync::Mutex;
 
 use crate::network::{NetworkEvent, NetworkManager, NetworkState};
 use crate::state::AppState;
 use crate::MainWindow;
+use crate::MemberItem;
 
 pub fn setup_network_bindings(
     window: &MainWindow,
@@ -105,14 +107,16 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             }
         }
         NetworkEvent::MembersUpdated(members) => {
-            // This will be handled in Phase D to update the members list
-            tracing::debug!(count = members.len(), "Members updated");
+            // Update the members list from network peers
+            update_network_members(window, state, &members);
         }
         NetworkEvent::ConnectionFailed(reason) => {
             window.set_network_status(format!("Error: {}", reason).into());
         }
         NetworkEvent::Disconnected => {
             window.set_network_status("Disconnected".into());
+            // Reload members from local database
+            window.invoke_load_members();
         }
     }
 }
@@ -134,5 +138,41 @@ fn store_network_message(state: &Arc<AppState>, net_msg: &NetMessage) {
     let db = state.db.lock().unwrap();
     if let Err(e) = db.messages().create(&message) {
         tracing::warn!(error = %e, "Failed to store network message");
+    }
+}
+
+/// Update the members list from network peer info
+fn update_network_members(window: &MainWindow, state: &Arc<AppState>, peers: &[PeerInfo]) {
+    let current_user_id = state.current_user_id();
+
+    let member_items: Vec<MemberItem> = peers
+        .iter()
+        .map(|p| MemberItem {
+            id: p.user_id.to_string().into(),
+            name: p.username.clone().into(),
+            role: net_role_display(p.role).into(),
+            is_online: true, // All network peers are online
+            is_host: p.is_host,
+            is_you: current_user_id == Some(p.user_id),
+        })
+        .collect();
+
+    let model = std::rc::Rc::new(VecModel::from(member_items));
+    window.set_members(ModelRc::from(model));
+
+    // Update current user id for context actions
+    if let Some(uid) = current_user_id {
+        window.set_current_user_id(uid.to_string().into());
+    }
+}
+
+/// Convert NetRole to display string
+fn net_role_display(role: NetRole) -> &'static str {
+    match role {
+        NetRole::Builder => "Builder",
+        NetRole::Prefect => "Prefect",
+        NetRole::Moderator => "Moderator",
+        NetRole::Agent => "Agent",
+        NetRole::Fellow => "Fellow",
     }
 }
