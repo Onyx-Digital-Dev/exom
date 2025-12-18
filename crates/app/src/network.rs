@@ -829,7 +829,7 @@ async fn handle_client_event(
             last_epoch,
             members,
         } => {
-            info!(hall_id = %hall_id, last_epoch = last_epoch, "Host dead - starting election");
+            info!(hall_id = %hall_id, last_epoch = last_epoch, members = members.len(), "Host dead - starting election");
             let _ = event_tx.send(NetworkEvent::ElectionInProgress).await;
 
             // Perform deterministic election
@@ -841,38 +841,69 @@ async fn handle_client_event(
             if let (Some(user_id), Some(user_role), Some(username)) = (user_id, user_role, username)
             {
                 // Determine election winner
-                let winner = elect_new_host(&members, user_id, user_role);
+                match elect_new_host(&members, user_id, user_role) {
+                    Some(winner) if winner == user_id => {
+                        info!("This node won election - becoming host");
 
-                if winner == user_id {
-                    info!("This node won election - becoming host");
-
-                    // Try to start server
-                    let token = token.unwrap_or_else(|| "failover".to_string());
-                    match try_start_server(hall_id, user_id, username, user_role, token, last_epoch)
+                        // Try to start server
+                        let token = token.unwrap_or_else(|| "failover".to_string());
+                        match try_start_server(
+                            hall_id, user_id, username, user_role, token, last_epoch,
+                        )
                         .await
-                    {
-                        Some((server, port)) => {
-                            {
-                                let mut s = state.write().await;
-                                s.server = Some(server);
-                                s.network_state = NetworkState::Hosting;
-                                s.host_id = Some(user_id);
-                                s.epoch = last_epoch + 1;
+                        {
+                            Some((server, port)) => {
+                                {
+                                    let mut s = state.write().await;
+                                    s.server = Some(server);
+                                    s.network_state = NetworkState::Hosting;
+                                    s.host_id = Some(user_id);
+                                    s.epoch = last_epoch + 1;
+                                }
+                                let _ = event_tx.send(NetworkEvent::BecameHost { port }).await;
+                                let _ = event_tx
+                                    .send(NetworkEvent::StateChanged(NetworkState::Hosting))
+                                    .await;
                             }
-                            let _ = event_tx.send(NetworkEvent::BecameHost { port }).await;
-                            let _ = event_tx
-                                .send(NetworkEvent::StateChanged(NetworkState::Hosting))
-                                .await;
-                        }
-                        None => {
-                            error!("Failed to start server after winning election");
-                            let _ = event_tx.send(NetworkEvent::Disconnected).await;
+                            None => {
+                                error!("Failed to start server after winning election");
+                                let mut s = state.write().await;
+                                s.network_state = NetworkState::Offline;
+                                let _ = event_tx.send(NetworkEvent::Disconnected).await;
+                                let _ = event_tx
+                                    .send(NetworkEvent::StateChanged(NetworkState::Offline))
+                                    .await;
+                            }
                         }
                     }
-                } else {
-                    info!(winner = %winner, "Another node won election - waiting for reconnect info");
-                    // Will receive HostElected event with new host address
+                    Some(winner) => {
+                        info!(winner = %winner, "Another node won election - waiting for reconnect info");
+                        // Will receive HostElected event with new host address
+                    }
+                    None => {
+                        // No one can host - go offline gracefully
+                        warn!("Election failed - no viable host candidates");
+                        let mut s = state.write().await;
+                        s.network_state = NetworkState::Offline;
+                        let _ = event_tx
+                            .send(NetworkEvent::ConnectionFailed(
+                                "No one can host - session ended".to_string(),
+                            ))
+                            .await;
+                        let _ = event_tx
+                            .send(NetworkEvent::StateChanged(NetworkState::Offline))
+                            .await;
+                    }
                 }
+            } else {
+                // Missing user info - go offline
+                warn!("Election failed - missing user info");
+                let mut s = state.write().await;
+                s.network_state = NetworkState::Offline;
+                let _ = event_tx.send(NetworkEvent::Disconnected).await;
+                let _ = event_tx
+                    .send(NetworkEvent::StateChanged(NetworkState::Offline))
+                    .await;
             }
         }
         ServerEvent::HostElected {
@@ -888,20 +919,48 @@ async fn handle_client_event(
                 host = %host_user_id,
                 addr = %host_addr,
                 port = host_port,
-                "New host elected - reconnecting"
+                "New host elected"
             );
 
-            // Update epoch
-            {
+            // Check if we need to step down (race condition resolution)
+            let (our_epoch, our_user_id, is_hosting) = {
+                let s = state.read().await;
+                (s.epoch, s.user_id, s.network_state == NetworkState::Hosting)
+            };
+
+            let should_step_down = is_hosting
+                && (epoch > our_epoch
+                    || (epoch == our_epoch
+                        && our_user_id.map_or(true, |uid| {
+                            // Tie-breaker: lower user_id wins
+                            host_user_id.to_string() < uid.to_string()
+                        })));
+
+            if should_step_down {
+                warn!(
+                    our_epoch = our_epoch,
+                    new_epoch = epoch,
+                    "Stepping down - another host has priority"
+                );
+                // Shut down our server
+                let mut s = state.write().await;
+                if let Some(server) = s.server.take() {
+                    server.shutdown();
+                }
+                s.network_state = NetworkState::Offline;
+                s.epoch = epoch;
+            } else {
+                // Update epoch if newer
                 let mut s = state.write().await;
                 if epoch > s.epoch {
                     s.epoch = epoch;
                 }
             }
 
-            // TODO: Auto-reconnect to new host
-            // For now, just update the state and let the user reconnect
             let _ = event_tx.send(NetworkEvent::Disconnected).await;
+            let _ = event_tx
+                .send(NetworkEvent::StateChanged(NetworkState::Offline))
+                .await;
         }
         ServerEvent::SyncBatch {
             hall_id: _,
@@ -921,8 +980,8 @@ async fn handle_client_event(
 }
 
 /// Elect new host deterministically from members list
-/// Returns the user_id of the winner
-fn elect_new_host(members: &[PeerInfo], my_user_id: Uuid, my_role: NetRole) -> Uuid {
+/// Returns the user_id of the winner, or None if no one can host
+fn elect_new_host(members: &[PeerInfo], my_user_id: Uuid, my_role: NetRole) -> Option<Uuid> {
     // Build candidate list (excluding current host who is dead)
     let mut candidates: Vec<(Uuid, NetRole)> = members
         .iter()
@@ -935,30 +994,30 @@ fn elect_new_host(members: &[PeerInfo], my_user_id: Uuid, my_role: NetRole) -> U
         candidates.push((my_user_id, my_role));
     }
 
+    // Filter to only candidates who can host (Agent or higher)
+    let mut hostable: Vec<_> = candidates
+        .into_iter()
+        .filter(|(_, role)| role.can_host())
+        .collect();
+
+    if hostable.is_empty() {
+        // No one can host - election fails
+        return None;
+    }
+
     // Sort by: 1) role descending (higher role wins), 2) user_id ascending (tie-breaker)
-    candidates.sort_by(|a, b| {
+    hostable.sort_by(|a, b| {
         // First compare by role (descending - higher role wins)
         match b.1.cmp(&a.1) {
             std::cmp::Ordering::Equal => {
-                // Tie-breaker: ascending by user_id
+                // Tie-breaker: ascending by user_id (deterministic)
                 a.0.to_string().cmp(&b.0.to_string())
             }
             other => other,
         }
     });
 
-    // Filter to only candidates who can host (Agent or higher)
-    let hostable: Vec<_> = candidates
-        .iter()
-        .filter(|(_, role)| role.can_host())
-        .collect();
-
-    if let Some((winner_id, _)) = hostable.first() {
-        *winner_id
-    } else {
-        // No one can host - return first candidate anyway
-        candidates.first().map(|(id, _)| *id).unwrap_or(my_user_id)
-    }
+    Some(hostable[0].0)
 }
 
 /// Try to start a server on port 7331, incrementing if busy (up to +20)
