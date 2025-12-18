@@ -83,6 +83,10 @@ impl AppState {
     pub fn current_username(&self) -> Option<String> {
         let user_id = self.current_user_id()?;
         let db = self.db.lock().unwrap();
-        db.users().find_by_id(user_id).ok().flatten().map(|u| u.username)
+        db.users()
+            .find_by_id(user_id)
+            .ok()
+            .flatten()
+            .map(|u| u.username)
     }
 }
