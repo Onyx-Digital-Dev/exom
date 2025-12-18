@@ -28,3 +28,38 @@
 - MembersPanel footer shows network status and invite URL
 - Copy button copies invite URL to system clipboard (arboard)
 - Network status indicator in right panel
+
+## Phase G: Hardening for Daily Use
+
+### G0: Repo Traceability
+- **Commit**: `dc3d2cd`
+- Created CHANGELOG.md with Phase F commit hashes
+
+### G1: Connection State UI
+- **Commit**: `988d4f6`
+- Detailed status: Connected (Host/Client) with address
+- Reconnect countdown: "Reconnecting... (retry N in Xs)"
+- Election status display
+
+### G2: Clipboard Robustness
+- **Commit**: `31ff9a0`
+- Fallback to wl-copy for Wayland
+- Visual "Copy failed" message if both methods fail
+
+### G3: Message Ordering
+- **Commit**: `4027237`
+- Sequence column in messages table
+- Deterministic ordering: sequence, timestamp, id
+- No duplicates after reconnect
+
+### G4: Host Failover Hardening
+- **Commit**: `af7f1ca`
+- Election fails gracefully if no viable host
+- Race condition resolution via epoch + user_id tie-breaker
+- Losing host steps down automatically
+
+### G5: Runbook Documentation
+- **Commit**: `00c600a`
+- How to host, invite, and test failover
+- Status line meanings
+- Troubleshooting guide
