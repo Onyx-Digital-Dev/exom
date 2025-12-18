@@ -71,4 +71,11 @@ impl AppState {
     pub fn current_hall_id(&self) -> Option<Uuid> {
         *self.current_hall_id.lock().unwrap()
     }
+
+    /// Get current host name for the selected hall (if any)
+    /// Note: Hosting state is currently ephemeral and not persisted
+    pub fn current_host_name(&self) -> Option<String> {
+        // TODO: Integrate with HostingState when session management is added
+        None
+    }
 }

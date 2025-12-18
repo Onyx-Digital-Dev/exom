@@ -3,7 +3,7 @@
 import { Theme } from "theme.slint";
 import { TextField, Button, Separator, RoleBadge, HostBadge } from "components.slint";
 
-// Message data
+// Message data with grouping support
 export struct MessageItem {
     id: string,
     sender-name: string,
@@ -11,6 +11,8 @@ export struct MessageItem {
     content: string,
     timestamp: string,
     is-edited: bool,
+    is-group-start: bool,  // True if first message in a group from same sender
+    is-host: bool,         // True if sender is current host
 }
 
 export component ChatPanel inherits Rectangle {
@@ -78,16 +80,19 @@ export component ChatPanel inherits Rectangle {
 
             VerticalLayout {
                 padding: Theme.pad-md;
-                spacing: Theme.pad-sm;
+                spacing: 0;
 
                 for msg in root.messages: Rectangle {
                     background: transparent;
+                    // More space before group start, compact spacing within group
+                    height: msg.is-group-start ? self.preferred-height + Theme.pad-md : self.preferred-height + 2px;
 
                     VerticalLayout {
                         spacing: 2px;
+                        padding-top: msg.is-group-start ? Theme.pad-sm : 0;
 
-                        // Header row
-                        HorizontalLayout {
+                        // Header row - only shown for first message in group
+                        if msg.is-group-start: HorizontalLayout {
                             spacing: Theme.pad-sm;
 
                             Text {
@@ -96,6 +101,8 @@ export component ChatPanel inherits Rectangle {
                                 font-size: Theme.text-sm;
                                 font-weight: 500;
                             }
+
+                            if msg.is-host: HostBadge {}
 
                             RoleBadge {
                                 role: msg.sender-role;
@@ -107,20 +114,39 @@ export component ChatPanel inherits Rectangle {
                                 color: Theme.color-text-dim;
                                 font-size: Theme.text-xs;
                             }
+                        }
+
+                        // Content row with inline timestamp for grouped messages
+                        HorizontalLayout {
+                            spacing: Theme.pad-sm;
+
+                            // Indent grouped messages slightly to align with header content
+                            if !msg.is-group-start: Rectangle {
+                                width: 0;
+                            }
+
+                            Text {
+                                text: msg.content;
+                                color: Theme.color-text;
+                                font-size: Theme.text-md;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1;
+                            }
+
+                            // Compact timestamp on hover for grouped messages
+                            if !msg.is-group-start: Text {
+                                text: msg.timestamp;
+                                color: Theme.color-text-dim;
+                                font-size: Theme.text-xs;
+                                vertical-alignment: center;
+                            }
 
                             if msg.is-edited: Text {
                                 text: "(edited)";
                                 color: Theme.color-text-dim;
                                 font-size: Theme.text-xs;
+                                vertical-alignment: center;
                             }
-                        }
-
-                        // Content
-                        Text {
-                            text: msg.content;
-                            color: Theme.color-text;
-                            font-size: Theme.text-md;
-                            wrap: word-wrap;
                         }
                     }
                 }

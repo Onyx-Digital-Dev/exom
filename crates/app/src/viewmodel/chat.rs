@@ -25,17 +25,33 @@ pub fn setup_chat_bindings(window: &MainWindow, state: Arc<AppState>) {
             Err(_) => return,
         };
 
-        let message_items: Vec<MessageItem> = messages
-            .iter()
-            .map(|m| MessageItem {
+        // Get current host name for comparison
+        let current_host = state_load.current_host_name();
+
+        // Build message items with grouping
+        let mut message_items: Vec<MessageItem> = Vec::with_capacity(messages.len());
+        let mut prev_sender: Option<String> = None;
+
+        for m in messages.iter() {
+            let is_group_start = prev_sender.as_ref() != Some(&m.sender_username);
+            let is_host = current_host
+                .as_ref()
+                .map(|h| h == &m.sender_username)
+                .unwrap_or(false);
+
+            message_items.push(MessageItem {
                 id: m.id.to_string().into(),
                 sender_name: m.sender_username.clone().into(),
                 sender_role: m.sender_role.short_name().into(),
                 content: m.content.clone().into(),
                 timestamp: m.format_timestamp().into(),
                 is_edited: m.is_edited,
-            })
-            .collect();
+                is_group_start,
+                is_host,
+            });
+
+            prev_sender = Some(m.sender_username.clone());
+        }
 
         drop(db);
 
