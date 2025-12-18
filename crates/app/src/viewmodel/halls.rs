@@ -400,7 +400,11 @@ pub fn setup_hall_bindings(
         };
 
         if hall.owner_id == user_id {
-            // Can't leave own hall
+            // Can't leave own hall - show feedback
+            drop(db);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_hall_error("You own this hall and cannot leave it".into());
+            }
             return;
         }
 
