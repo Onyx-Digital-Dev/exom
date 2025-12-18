@@ -46,9 +46,13 @@ export component MainWindow inherits Window {
     // Switcher state
     in-out property <[SwitcherHallItem]> switcher-halls: [];
     property <bool> show-switcher: false;
+    in-out property <string> switcher-search-text: "";
 
     // Keyboard navigation state
     property <int> selected-hall-index: -1;
+
+    // Switcher filtering callback
+    callback filter-switcher-halls(string);
 
     // Auth callbacks
     callback login(string, string);
@@ -192,6 +196,7 @@ export component MainWindow inherits Window {
                 // Alt+X: Open hall switcher
                 if event.modifiers.alt && event.text == "x" {
                     root.show-switcher = true;
+                    root.filter-switcher-halls("");
                     hall-switcher.focus-search();
                     return accept;
                 }
@@ -246,6 +251,7 @@ export component MainWindow inherits Window {
         hall-switcher := HallSwitcher {
             halls: root.switcher-halls;
             show: root.show-switcher;
+            search-text <=> root.switcher-search-text;
             select-hall(id) => {
                 root.select-hall(id);
                 // Focus chat input after selecting hall
@@ -257,6 +263,9 @@ export component MainWindow inherits Window {
                 if root.current-hall-id != "" {
                     chat-panel.focus-input();
                 }
+            }
+            search-changed(text) => {
+                root.filter-switcher-halls(text);
             }
         }
     }

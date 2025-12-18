@@ -14,8 +14,13 @@ export component HallSwitcher inherits Rectangle {
     in property <[SwitcherHallItem]> halls: [];
     in property <bool> show: false;
 
+    // Search and selection state
+    in-out property <string> search-text: "";
+    property <int> selected-index: 0;
+
     callback select-hall(string);
     callback close-requested();
+    callback search-changed(string);
 
     // Full screen overlay
     background: root.show ? Theme.color-overlay : transparent;
@@ -33,6 +38,28 @@ export component HallSwitcher inherits Rectangle {
         key-pressed(event) => {
             if event.text == Key.Escape {
                 root.close-requested();
+                return accept;
+            }
+            // Alt+J: Move selection down
+            if event.modifiers.alt && event.text == "j" {
+                if root.halls.length > 0 && root.selected-index < root.halls.length - 1 {
+                    root.selected-index = root.selected-index + 1;
+                }
+                return accept;
+            }
+            // Alt+K: Move selection up
+            if event.modifiers.alt && event.text == "k" {
+                if root.halls.length > 0 && root.selected-index > 0 {
+                    root.selected-index = root.selected-index - 1;
+                }
+                return accept;
+            }
+            // Enter: Activate selected hall
+            if event.text == Key.Return {
+                if root.halls.length > 0 && root.selected-index >= 0 && root.selected-index < root.halls.length {
+                    root.select-hall(root.halls[root.selected-index].id);
+                    root.close-requested();
+                }
                 return accept;
             }
             return reject;
@@ -69,6 +96,12 @@ export component HallSwitcher inherits Rectangle {
                     search-input := TextField {
                         placeholder: "Switch to hall...";
                         horizontal-stretch: 1;
+                        text <=> root.search-text;
+                        edited => {
+                            // Reset selection and trigger filtering
+                            root.selected-index = 0;
+                            root.search-changed(root.search-text);
+                        }
                     }
                 }
             }
@@ -82,7 +115,9 @@ export component HallSwitcher inherits Rectangle {
                     padding: Theme.pad-xs;
                     spacing: 2px;
 
-                    for hall in root.halls: ListItem {
+                    for hall[idx] in root.halls: ListItem {
+                        keyboard-focused: idx == root.selected-index;
+
                         clicked => {
                             root.select-hall(hall.id);
                             root.close-requested();
@@ -116,7 +151,7 @@ export component HallSwitcher inherits Rectangle {
                         height: 60px;
 
                         Text {
-                            text: "No halls found";
+                            text: root.search-text != "" ? "No matching halls" : "No halls";
                             color: Theme.color-text-dim;
                             font-size: Theme.text-sm;
                             horizontal-alignment: center;
@@ -137,7 +172,7 @@ export component HallSwitcher inherits Rectangle {
                     padding-right: Theme.pad-sm;
 
                     Text {
-                        text: "Esc to close";
+                        text: "Alt+J/K navigate | Enter select | Esc close";
                         color: Theme.color-text-dim;
                         font-size: Theme.text-xs;
                         vertical-alignment: center;
@@ -151,5 +186,7 @@ export component HallSwitcher inherits Rectangle {
     public function focus-search() {
         search-input.set-focus();
         scope.focus();
+        root.selected-index = 0;
+        root.search-text = "";
     }
 }

@@ -9,6 +9,7 @@ use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use crate::state::AppState;
 use crate::HallItem;
 use crate::MainWindow;
+use crate::SwitcherHallItem;
 
 pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
     // Load halls
@@ -328,6 +329,56 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
             w.set_current_hall_id("".into());
             w.set_current_hall_name("".into());
             w.invoke_load_halls();
+        }
+    });
+
+    // Filter switcher halls by search text
+    let state_filter = state.clone();
+    let window_weak = window.as_weak();
+    window.on_filter_switcher_halls(move |search_text| {
+        let user_id = match state_filter.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let db = state_filter.db.lock().unwrap();
+        let halls = match db.halls().list_for_user(user_id) {
+            Ok(h) => h,
+            Err(_) => return,
+        };
+
+        let search_lower = search_text.to_string().to_lowercase();
+
+        let filtered_items: Vec<SwitcherHallItem> = halls
+            .iter()
+            .filter(|h| {
+                if search_lower.is_empty() {
+                    true
+                } else {
+                    h.name.to_lowercase().contains(&search_lower)
+                }
+            })
+            .map(|h| {
+                let role = db
+                    .halls()
+                    .get_user_role(user_id, h.id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or(HallRole::HallFellow);
+
+                SwitcherHallItem {
+                    id: h.id.to_string().into(),
+                    name: h.name.clone().into(),
+                    role: role.short_name().into(),
+                }
+            })
+            .collect();
+
+        drop(db);
+
+        if let Some(w) = window_weak.upgrade() {
+            let model = std::rc::Rc::new(VecModel::from(filtered_items));
+            w.set_switcher_halls(ModelRc::from(model));
         }
     });
 }
