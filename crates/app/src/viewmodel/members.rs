@@ -95,10 +95,23 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
 
         // Check permission
         if !PermissionMatrix::can_change_role(actor_role, target_role, new_role) {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Insufficient permissions".into());
+            }
             return;
         }
 
-        let _ = db.halls().update_role(target_id, hall_id, new_role);
+        if db
+            .halls()
+            .update_role(target_id, hall_id, new_role)
+            .is_err()
+        {
+            drop(db);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Failed to update role".into());
+            }
+            return;
+        }
         drop(db);
 
         // Init chest if promoted to Agent
@@ -110,6 +123,7 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
         }
 
         if let Some(w) = window_weak.upgrade() {
+            w.set_member_action_status("".into());
             w.invoke_load_members();
         }
     });
@@ -157,13 +171,27 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
 
         // Check permission
         if !PermissionMatrix::can_change_role(actor_role, target_role, new_role) {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Insufficient permissions".into());
+            }
             return;
         }
 
-        let _ = db.halls().update_role(target_id, hall_id, new_role);
+        if db
+            .halls()
+            .update_role(target_id, hall_id, new_role)
+            .is_err()
+        {
+            drop(db);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Failed to update role".into());
+            }
+            return;
+        }
         drop(db);
 
         if let Some(w) = window_weak.upgrade() {
+            w.set_member_action_status("".into());
             w.invoke_load_members();
         }
     });
@@ -202,13 +230,23 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
 
         // Check permission
         if !PermissionMatrix::can_kick(actor_role, target_role) {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Insufficient permissions".into());
+            }
             return;
         }
 
-        let _ = db.halls().remove_member(target_id, hall_id);
+        if db.halls().remove_member(target_id, hall_id).is_err() {
+            drop(db);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("Failed to remove member".into());
+            }
+            return;
+        }
         drop(db);
 
         if let Some(w) = window_weak.upgrade() {
+            w.set_member_action_status("".into());
             w.invoke_load_members();
         }
     });

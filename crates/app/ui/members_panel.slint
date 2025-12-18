@@ -27,6 +27,7 @@ export component MembersPanel inherits Rectangle {
     in property <string> chest-path;
     in property <string> chest-status;
     in property <string> current-user-id;
+    in property <string> action-status;  // Status for member actions
 
     callback promote-member(string);
     callback demote-member(string);
@@ -179,7 +180,7 @@ export component MembersPanel inherits Rectangle {
 
             // Context actions for selected member
             if root.selected-member-id != "" && root.selected-member-id != root.current-user-id: Rectangle {
-                height: 80px;
+                height: root.action-status != "" ? 100px : 80px;
                 background: Theme.color-panel-elevated;
 
                 VerticalLayout {
@@ -205,6 +206,14 @@ export component MembersPanel inherits Rectangle {
                     DangerButton {
                         label: "Kick";
                         clicked => { root.kick-member(root.selected-member-id); root.selected-member-id = ""; }
+                    }
+
+                    // Action status
+                    if root.action-status != "": Text {
+                        text: root.action-status;
+                        color: Theme.color-text-muted;
+                        font-size: Theme.text-xs;
+                        horizontal-alignment: center;
                     }
                 }
             }

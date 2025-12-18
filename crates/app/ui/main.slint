@@ -43,6 +43,9 @@ export component MainWindow inherits Window {
     in-out property <string> chest-path;
     in-out property <string> chest-status;
 
+    // Action status (non-fatal errors)
+    in-out property <string> member-action-status;
+
     // Switcher state
     in-out property <[SwitcherHallItem]> switcher-halls: [];
     property <bool> show-switcher: false;
@@ -176,6 +179,7 @@ export component MainWindow inherits Window {
                 chest-path: root.chest-path;
                 chest-status: root.chest-status;
                 current-user-id: root.current-user-id;
+                action-status: root.member-action-status;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }
