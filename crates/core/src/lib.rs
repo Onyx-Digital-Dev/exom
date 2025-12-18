@@ -5,6 +5,7 @@
 pub mod chest;
 pub mod error;
 pub mod hosting;
+pub mod invariants;
 pub mod models;
 pub mod permissions;
 pub mod storage;
