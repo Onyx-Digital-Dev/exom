@@ -118,6 +118,23 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             // Reload members from local database
             window.invoke_load_members();
         }
+        NetworkEvent::HostDisconnected { hall_id, was_host } => {
+            if was_host {
+                // We were the host - just show disconnected
+                window.set_network_status("Server stopped".into());
+            } else {
+                // Host disconnected - we could potentially take over
+                tracing::info!(hall_id = %hall_id, "Host disconnected - session ended");
+                window.set_network_status("Host left - reconnect needed".into());
+            }
+            // Reload members from local database
+            window.invoke_load_members();
+        }
+        NetworkEvent::HostChanged { new_host_id } => {
+            // Host changed - update UI
+            tracing::info!(new_host_id = %new_host_id, "Host changed");
+            // The members list will be updated via MembersUpdated event
+        }
     }
 }
 

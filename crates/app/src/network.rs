@@ -35,6 +35,10 @@ pub enum NetworkEvent {
     ConnectionFailed(String),
     /// Disconnected
     Disconnected,
+    /// Host disconnected - client may need to take over
+    HostDisconnected { hall_id: Uuid, was_host: bool },
+    /// Host changed to a new user
+    HostChanged { new_host_id: Uuid },
 }
 
 /// Network manager handle
@@ -50,6 +54,9 @@ struct NetworkManagerState {
     invite_url: Option<String>,
     hall_id: Option<Uuid>,
     host_id: Option<Uuid>,
+    /// Current user's info for potential host takeover
+    user_id: Option<Uuid>,
+    user_role: Option<NetRole>,
 }
 
 enum NetworkCommand {
@@ -83,6 +90,8 @@ impl NetworkManager {
             invite_url: None,
             hall_id: None,
             host_id: None,
+            user_id: None,
+            user_role: None,
         }));
 
         // Spawn the network task
@@ -298,6 +307,8 @@ async fn handle_start_hosting(
                 s.invite_url = Some(invite_url);
                 s.hall_id = Some(hall_id);
                 s.host_id = Some(host_id);
+                s.user_id = Some(host_id);
+                s.user_role = Some(host_role);
             }
 
             let _ = event_tx
@@ -372,6 +383,8 @@ async fn handle_connect(
                 let mut s = state.write().await;
                 s.network_state = NetworkState::Connected;
                 s.hall_id = Some(invite.hall_id);
+                s.user_id = Some(user_id);
+                s.user_role = Some(role);
             }
             let _ = event_tx
                 .send(NetworkEvent::StateChanged(NetworkState::Connected))
@@ -458,10 +471,39 @@ async fn handle_client_event(
             debug!(user_id = %user_id, "Peer left");
         }
         ServerEvent::HostChanged { new_host_id } => {
-            let mut s = state.write().await;
-            s.host_id = Some(new_host_id);
+            {
+                let mut s = state.write().await;
+                s.host_id = Some(new_host_id);
+            }
+            let _ = event_tx
+                .send(NetworkEvent::HostChanged { new_host_id })
+                .await;
         }
-        ServerEvent::Disconnected | ServerEvent::ServerShutdown => {
+        ServerEvent::ServerShutdown => {
+            // Host has shut down - emit special event for potential takeover
+            let (hall_id, user_id, host_id) = {
+                let mut s = state.write().await;
+                let hall_id = s.hall_id;
+                let user_id = s.user_id;
+                let host_id = s.host_id;
+                s.network_state = NetworkState::Offline;
+                s.host_id = None;
+                (hall_id, user_id, host_id)
+            };
+
+            if let Some(hall_id) = hall_id {
+                // Check if this user was the host
+                let was_host = user_id == host_id;
+                let _ = event_tx
+                    .send(NetworkEvent::HostDisconnected { hall_id, was_host })
+                    .await;
+            }
+            let _ = event_tx.send(NetworkEvent::Disconnected).await;
+            let _ = event_tx
+                .send(NetworkEvent::StateChanged(NetworkState::Offline))
+                .await;
+        }
+        ServerEvent::Disconnected => {
             let mut s = state.write().await;
             s.network_state = NetworkState::Offline;
             let _ = event_tx.send(NetworkEvent::Disconnected).await;
