@@ -55,7 +55,8 @@ export component MainWindow inherits Window {
     property <int> selected-hall-index: -1;
 
     // Network state
-    in-out property <string> network-status: "Offline";
+    in-out property <string> network-status: "Working offline";
+    in-out property <bool> is-network-connected: false;
     in-out property <string> invite-url: "";
 
     // Switcher filtering callback
@@ -130,7 +131,7 @@ export component MainWindow inherits Window {
                         width: 8px;
                         height: 8px;
                         border-radius: 4px;
-                        background: root.network-status == "Connected" || root.network-status == "Hosting" ? Theme.color-online : Theme.color-text-dim;
+                        background: root.is-network-connected ? Theme.color-online : Theme.color-text-dim;
                     }
                 }
 
@@ -212,6 +213,7 @@ export component MainWindow inherits Window {
                 current-user-role: root.current-user-role;
                 action-status: root.member-action-status;
                 network-status: root.network-status;
+                is-network-connected: root.is-network-connected;
                 invite-url: root.invite-url;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }

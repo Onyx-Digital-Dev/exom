@@ -14,6 +14,12 @@ use crate::state::{AppState, TrackedMember};
 use crate::MainWindow;
 use crate::MemberItem;
 
+/// Set network status with connectivity indicator
+fn set_network_status(window: &MainWindow, status: &str, connected: bool) {
+    window.set_network_status(status.into());
+    window.set_is_network_connected(connected);
+}
+
 pub fn setup_network_bindings(
     window: &MainWindow,
     state: Arc<AppState>,
@@ -104,28 +110,26 @@ pub fn setup_network_bindings(
 fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: NetworkEvent) {
     match event {
         NetworkEvent::StateChanged(net_state) => {
-            let status = match net_state {
-                NetworkState::Offline => "Offline (local only)".to_string(),
-                NetworkState::Connecting => "Connecting...".to_string(),
-                NetworkState::Connected => "Connected (Client)".to_string(),
-                NetworkState::Hosting => "Connected (Host)".to_string(),
-                NetworkState::Reconnecting => "Reconnecting...".to_string(),
+            let (status, connected) = match net_state {
+                NetworkState::Offline => ("Working offline", false),
+                NetworkState::Connecting => ("Connecting...", false),
+                NetworkState::Connected => ("Connected", true),
+                NetworkState::Hosting => ("Hosting", true),
+                NetworkState::Reconnecting => ("Reconnecting...", false),
             };
-            window.set_network_status(status.into());
+            set_network_status(window, status, connected);
         }
-        NetworkEvent::HostingAt { addr, port } => {
-            window.set_network_status(format!("Connected (Host) - {}:{}", addr, port).into());
+        NetworkEvent::HostingAt { addr: _, port } => {
+            set_network_status(window, &format!("Hosting on port {}", port), true);
         }
-        NetworkEvent::ConnectedTo { addr } => {
-            window.set_network_status(format!("Connected (Client) - {}", addr).into());
+        NetworkEvent::ConnectedTo { addr: _ } => {
+            set_network_status(window, "Connected", true);
         }
         NetworkEvent::ReconnectRetry {
-            attempt,
+            attempt: _,
             next_in_secs,
         } => {
-            window.set_network_status(
-                format!("Reconnecting... (retry {} in {}s)", attempt, next_in_secs).into(),
-            );
+            set_network_status(window, &format!("Reconnecting in {}s...", next_in_secs), false);
         }
         NetworkEvent::ChatReceived(net_msg) => {
             // Store incoming message locally if it's for the current hall
@@ -175,7 +179,9 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             }
         }
         NetworkEvent::ConnectionFailed(reason) => {
-            window.set_network_status(format!("Error: {}", reason).into());
+            // Log the technical reason, show human-friendly message
+            tracing::warn!(reason = %reason, "Connection failed");
+            set_network_status(window, "Connection failed", false);
         }
         NetworkEvent::Disconnected => {
             // Add system message
@@ -185,18 +191,18 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             }
             // Clear known members on disconnect
             state.clear_known_members();
-            window.set_network_status("Disconnected".into());
+            set_network_status(window, "Disconnected", false);
             // Reload members from local database
             window.invoke_load_members();
         }
         NetworkEvent::HostDisconnected { hall_id, was_host } => {
             if was_host {
                 // We were the host - just show disconnected
-                window.set_network_status("Server stopped".into());
+                set_network_status(window, "Session ended", false);
             } else {
                 // Host disconnected - we could potentially take over
                 tracing::info!(hall_id = %hall_id, "Host disconnected - session ended");
-                window.set_network_status("Host left - reconnect needed".into());
+                set_network_status(window, "Host disconnected", false);
             }
             // Reload members from local database
             window.invoke_load_members();
@@ -226,7 +232,7 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             persist_connection(state, &conn_info);
         }
         NetworkEvent::ElectionInProgress => {
-            window.set_network_status("Election in progress...".into());
+            set_network_status(window, "Choosing new host...", false);
         }
         NetworkEvent::BecameHost { port } => {
             tracing::info!(port = port, "This node became host after election");
@@ -235,7 +241,7 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                 state.add_system_message(hall_id, "You are now the host".to_string());
                 window.invoke_load_messages();
             }
-            window.set_network_status(format!("Hosting (port {})", port).into());
+            set_network_status(window, "Now hosting", true);
         }
         NetworkEvent::SyncBatchReceived { messages } => {
             // Store all synced messages (deduplication via INSERT OR IGNORE)

@@ -29,7 +29,8 @@ export component MembersPanel inherits Rectangle {
     in property <string> current-user-id;
     in property <string> current-user-role: "Fellow";  // User's role for permission hints
     in property <string> action-status;  // Status for member actions
-    in property <string> network-status: "Offline";
+    in property <string> network-status: "Working offline";
+    in property <bool> is-network-connected: false;
     in property <string> invite-url: "";
 
     callback promote-member(string);
@@ -366,7 +367,7 @@ export component MembersPanel inherits Rectangle {
                         width: 8px;
                         height: 8px;
                         border-radius: 4px;
-                        background: root.network-status == "Connected" || root.network-status == "Hosting" ? Theme.color-online : Theme.color-text-dim;
+                        background: root.is-network-connected ? Theme.color-online : Theme.color-text-dim;
                         y: 5px;
                     }
 
