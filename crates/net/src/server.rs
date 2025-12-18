@@ -17,8 +17,18 @@ use crate::error::{Error, Result};
 use crate::frame::{read_frame, write_frame};
 use crate::protocol::{Message, NetRole, PeerInfo};
 
+use chrono::Utc;
+
+use crate::protocol::NetMessage;
+
 /// Maximum number of connected peers
 const MAX_PEERS: usize = 32;
+
+/// Heartbeat interval in milliseconds
+const HEARTBEAT_INTERVAL_MS: u64 = 2000;
+
+/// Maximum messages to keep in history for sync
+const MAX_MESSAGE_HISTORY: usize = 500;
 
 /// Connected peer state
 struct Peer {
@@ -34,6 +44,11 @@ struct ServerState {
     host_id: Uuid,
     token: String,
     peers: HashMap<Uuid, Peer>,
+    epoch: u64,
+    /// Next sequence number for messages
+    next_sequence: u64,
+    /// Recent message history for sync (circular buffer)
+    message_history: Vec<NetMessage>,
 }
 
 impl ServerState {
@@ -93,6 +108,9 @@ impl Server {
             host_id,
             token,
             peers,
+            epoch: 1,
+            next_sequence: 1,
+            message_history: Vec::new(),
         }));
 
         // Spawn accept loop
@@ -100,11 +118,21 @@ impl Server {
         let shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(accept_loop(listener, state_clone, shutdown_rx));
 
+        // Spawn heartbeat task
+        let state_clone = state.clone();
+        let shutdown_rx = shutdown_tx.subscribe();
+        tokio::spawn(heartbeat_task(state_clone, shutdown_rx));
+
         Ok(Server {
             addr: bound_addr,
             state,
             shutdown_tx,
         })
+    }
+
+    /// Get current epoch
+    pub async fn epoch(&self) -> u64 {
+        self.state.read().await.epoch
     }
 
     /// Get the server's bound address
@@ -308,15 +336,92 @@ async fn writer_task(mut writer: WriteHalf<TcpStream>, mut rx: mpsc::Receiver<Me
 /// Handle an incoming message
 async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<ServerState>>) {
     match msg {
-        Message::Chat(chat_msg) => {
+        Message::Chat(mut chat_msg) => {
+            let message_id = chat_msg.id;
+
+            // Assign sequence number and store in history
+            let sequence = {
+                let mut s = state.write().await;
+                let seq = s.next_sequence;
+                s.next_sequence += 1;
+                chat_msg.sequence = seq;
+
+                // Store in history (circular buffer)
+                if s.message_history.len() >= MAX_MESSAGE_HISTORY {
+                    s.message_history.remove(0);
+                }
+                s.message_history.push(chat_msg.clone());
+
+                seq
+            };
+            debug!(sequence = sequence, "Assigned sequence to message");
+
             // Broadcast to all peers including sender
             broadcast_to_peers(state, Message::Chat(chat_msg), None).await;
+
+            // Send acknowledgment back to sender
+            let s = state.read().await;
+            if let Some(peer) = s.peers.get(&sender_id) {
+                let _ = peer.tx.send(Message::MessageAck { message_id }).await;
+            }
         }
         Message::Ping => {
             // Send pong back to sender only
             let s = state.read().await;
             if let Some(peer) = s.peers.get(&sender_id) {
                 let _ = peer.tx.send(Message::Pong).await;
+            }
+        }
+        Message::Typing {
+            hall_id,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            // Broadcast typing status to all peers except sender
+            broadcast_to_peers(
+                state,
+                Message::Typing {
+                    hall_id,
+                    user_id,
+                    username,
+                    is_typing,
+                },
+                Some(sender_id),
+            )
+            .await;
+        }
+        Message::SyncSince {
+            hall_id,
+            last_sequence,
+        } => {
+            // Find messages after last_sequence and send them
+            let (messages, from_sequence) = {
+                let s = state.read().await;
+                if hall_id != s.hall_id {
+                    return;
+                }
+                let messages: Vec<NetMessage> = s
+                    .message_history
+                    .iter()
+                    .filter(|m| m.sequence > last_sequence)
+                    .cloned()
+                    .collect();
+                let from_seq = messages.first().map(|m| m.sequence).unwrap_or(last_sequence);
+                (messages, from_seq)
+            };
+
+            // Send sync batch to requester
+            let s = state.read().await;
+            if let Some(peer) = s.peers.get(&sender_id) {
+                let _ = peer
+                    .tx
+                    .send(Message::SyncBatch {
+                        hall_id,
+                        from_sequence,
+                        messages,
+                    })
+                    .await;
             }
         }
         _ => {
@@ -344,6 +449,35 @@ async fn broadcast_to_peers(state: &Arc<RwLock<ServerState>>, msg: Message, exce
     for peer in s.peers.values() {
         if except.map_or(true, |ex| peer.user_id != ex) {
             let _ = peer.tx.send(msg.clone()).await;
+        }
+    }
+}
+
+/// Heartbeat task - sends heartbeats to all peers every 2s
+async fn heartbeat_task(state: Arc<RwLock<ServerState>>, mut shutdown_rx: broadcast::Receiver<()>) {
+    let interval = std::time::Duration::from_millis(HEARTBEAT_INTERVAL_MS);
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {
+                let (hall_id, host_id, epoch) = {
+                    let s = state.read().await;
+                    (s.hall_id, s.host_id, s.epoch)
+                };
+
+                let heartbeat = Message::HostHeartbeat {
+                    hall_id,
+                    epoch,
+                    host_user_id: host_id,
+                    timestamp: Utc::now(),
+                };
+
+                broadcast_to_peers(&state, heartbeat, None).await;
+            }
+            _ = shutdown_rx.recv() => {
+                debug!("Heartbeat task shutting down");
+                break;
+            }
         }
     }
 }

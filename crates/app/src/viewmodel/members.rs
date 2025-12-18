@@ -66,6 +66,14 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             None => return,
         };
 
+        // Prevent self-promotion
+        if target_id == user_id {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("You cannot promote yourself".into());
+            }
+            return;
+        }
+
         let hall_id = match state_promote.current_hall_id() {
             Some(id) => id,
             None => return,
@@ -142,6 +150,14 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             None => return,
         };
 
+        // Prevent self-demotion
+        if target_id == user_id {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("You cannot demote yourself".into());
+            }
+            return;
+        }
+
         let hall_id = match state_demote.current_hall_id() {
             Some(id) => id,
             None => return,
@@ -209,6 +225,14 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
             Some(id) => id,
             None => return,
         };
+
+        // Prevent self-kick
+        if target_id == user_id {
+            if let Some(w) = window_weak.upgrade() {
+                w.set_member_action_status("You cannot kick yourself".into());
+            }
+            return;
+        }
 
         let hall_id = match state_kick.current_hall_id() {
             Some(id) => id,

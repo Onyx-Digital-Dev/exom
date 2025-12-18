@@ -1,5 +1,6 @@
 //! SQLite storage layer for Exom
 
+mod connections;
 mod halls;
 mod invites;
 mod messages;
@@ -19,6 +20,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use tracing::instrument;
 
+pub use connections::{ConnectionStore, LastConnection};
 pub use halls::HallStore;
 pub use invites::InviteStore;
 pub use messages::MessageStore;
@@ -84,6 +86,11 @@ impl Database {
     /// Get invite store (legacy accessor)
     pub fn invites(&self) -> InviteStore<'_> {
         InviteStore::new(&self.conn)
+    }
+
+    /// Get connection store for auto-reconnect
+    pub fn connections(&self) -> ConnectionStore<'_> {
+        ConnectionStore::new(&self.conn)
     }
 }
 

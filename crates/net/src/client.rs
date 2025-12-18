@@ -2,6 +2,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
@@ -12,6 +13,9 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::frame::{read_frame, write_frame};
 use crate::protocol::{Message, NetRole, PeerInfo};
+
+/// Host is considered dead if no heartbeat for this many milliseconds
+const HOST_DEAD_TIMEOUT_MS: u64 = 6000;
 
 /// Connection state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +32,7 @@ pub enum ServerEvent {
     Joined {
         host_id: Uuid,
         members: Vec<PeerInfo>,
+        epoch: u64,
     },
     /// Join was rejected
     JoinRejected { reason: String },
@@ -43,6 +48,35 @@ pub enum ServerEvent {
     Disconnected,
     /// Server is shutting down
     ServerShutdown,
+    /// Host is dead (no heartbeat for 6s)
+    HostDead {
+        hall_id: Uuid,
+        last_epoch: u64,
+        members: Vec<PeerInfo>,
+    },
+    /// New host elected - reconnect to this address
+    HostElected {
+        hall_id: Uuid,
+        epoch: u64,
+        host_user_id: Uuid,
+        host_addr: String,
+        host_port: u16,
+    },
+    /// Batch of messages received after sync request
+    SyncBatch {
+        hall_id: Uuid,
+        from_sequence: u64,
+        messages: Vec<crate::protocol::NetMessage>,
+    },
+    /// Message was acknowledged by host
+    MessageAcked { message_id: Uuid },
+    /// User typing status received
+    TypingReceived {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
 }
 
 /// Client handle for network operations
@@ -54,10 +88,11 @@ pub struct Client {
 
 struct ClientState {
     connection: ConnectionState,
-    #[allow(dead_code)] // Used for reconnection logic in future
     hall_id: Option<Uuid>,
     host_id: Option<Uuid>,
     members: Vec<PeerInfo>,
+    epoch: u64,
+    last_heartbeat: Instant,
 }
 
 enum ClientCommand {
@@ -95,6 +130,8 @@ impl Client {
             hall_id: Some(hall_id),
             host_id: None,
             members: Vec::new(),
+            epoch: 0,
+            last_heartbeat: Instant::now(),
         }));
 
         let (event_tx, event_rx) = mpsc::channel(64);
@@ -138,6 +175,25 @@ impl Client {
             .map_err(|_| Error::NotConnected)
     }
 
+    /// Send typing status
+    pub async fn send_typing(
+        &self,
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    ) -> Result<()> {
+        self.cmd_tx
+            .send(ClientCommand::Send(Message::Typing {
+                hall_id,
+                user_id,
+                username,
+                is_typing,
+            }))
+            .await
+            .map_err(|_| Error::NotConnected)
+    }
+
     /// Disconnect from the server
     pub async fn disconnect(&self) {
         let _ = self.cmd_tx.send(ClientCommand::Disconnect).await;
@@ -173,15 +229,22 @@ async fn connection_task(
             hall_id: _,
             host_id,
             members,
+            epoch,
         }) => {
             {
                 let mut s = state.write().await;
                 s.connection = ConnectionState::Connected;
                 s.host_id = Some(host_id);
                 s.members = members.clone();
+                s.epoch = epoch;
+                s.last_heartbeat = Instant::now();
             }
             let _ = event_tx
-                .send(ServerEvent::Joined { host_id, members })
+                .send(ServerEvent::Joined {
+                    host_id,
+                    members,
+                    epoch,
+                })
                 .await;
             info!("Successfully joined hall");
         }
@@ -206,6 +269,7 @@ async fn connection_task(
                     let mut s = state.write().await;
                     s.connection = ConnectionState::Connected;
                     s.members = members.clone();
+                    s.last_heartbeat = Instant::now();
                 }
                 // Find host from members
                 let host_id = members
@@ -214,7 +278,11 @@ async fn connection_task(
                     .map(|m| m.user_id)
                     .unwrap_or(Uuid::nil());
                 let _ = event_tx
-                    .send(ServerEvent::Joined { host_id, members })
+                    .send(ServerEvent::Joined {
+                        host_id,
+                        members,
+                        epoch: 1,
+                    })
                     .await;
                 info!("Successfully joined hall (via member list)");
             } else {
@@ -233,6 +301,9 @@ async fn connection_task(
     }
 
     // Main loop - handle incoming messages and outgoing commands
+    let heartbeat_check_interval = std::time::Duration::from_millis(1000);
+    let mut host_dead_emitted = false;
+
     loop {
         tokio::select! {
             // Incoming message from server
@@ -265,6 +336,32 @@ async fn connection_task(
                         debug!("Disconnect requested");
                         break;
                     }
+                }
+            }
+
+            // Heartbeat watchdog
+            _ = tokio::time::sleep(heartbeat_check_interval) => {
+                let (hall_id, epoch, members, elapsed) = {
+                    let s = state.read().await;
+                    let elapsed = s.last_heartbeat.elapsed().as_millis() as u64;
+                    (s.hall_id, s.epoch, s.members.clone(), elapsed)
+                };
+
+                if elapsed > HOST_DEAD_TIMEOUT_MS && !host_dead_emitted {
+                    warn!(elapsed_ms = elapsed, "Host appears dead - no heartbeat");
+                    host_dead_emitted = true;
+
+                    if let Some(hall_id) = hall_id {
+                        let _ = event_tx
+                            .send(ServerEvent::HostDead {
+                                hall_id,
+                                last_epoch: epoch,
+                                members,
+                            })
+                            .await;
+                    }
+                    // Don't break - let the connection handle itself
+                    // The app layer will handle election
                 }
             }
         }
@@ -319,6 +416,94 @@ async fn handle_server_message(
         }
         Message::Pong => {
             debug!("Received pong");
+        }
+        Message::HostHeartbeat {
+            hall_id: _,
+            epoch,
+            host_user_id: _,
+            timestamp: _,
+        } => {
+            // Update last heartbeat time and epoch
+            let mut s = state.write().await;
+            if epoch >= s.epoch {
+                s.epoch = epoch;
+                s.last_heartbeat = Instant::now();
+            }
+        }
+        Message::HostElected {
+            hall_id,
+            epoch,
+            host_user_id,
+            host_addr,
+            host_port,
+        } => {
+            // Ignore stale elections
+            let current_epoch = state.read().await.epoch;
+            if epoch <= current_epoch {
+                debug!(
+                    epoch = epoch,
+                    current = current_epoch,
+                    "Ignoring stale HostElected"
+                );
+                return;
+            }
+
+            // Update epoch
+            {
+                let mut s = state.write().await;
+                s.epoch = epoch;
+            }
+
+            let _ = event_tx
+                .send(ServerEvent::HostElected {
+                    hall_id,
+                    epoch,
+                    host_user_id,
+                    host_addr,
+                    host_port,
+                })
+                .await;
+        }
+        Message::SyncBatch {
+            hall_id,
+            from_sequence,
+            messages,
+        } => {
+            debug!(
+                hall_id = %hall_id,
+                from_sequence = from_sequence,
+                count = messages.len(),
+                "Received sync batch"
+            );
+            let _ = event_tx
+                .send(ServerEvent::SyncBatch {
+                    hall_id,
+                    from_sequence,
+                    messages,
+                })
+                .await;
+        }
+        Message::MessageAck { message_id } => {
+            debug!(message_id = %message_id, "Received message ack");
+            let _ = event_tx
+                .send(ServerEvent::MessageAcked { message_id })
+                .await;
+        }
+        Message::Typing {
+            hall_id,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            debug!(user_id = %user_id, is_typing = is_typing, "Received typing status");
+            let _ = event_tx
+                .send(ServerEvent::TypingReceived {
+                    hall_id,
+                    user_id,
+                    username,
+                    is_typing,
+                })
+                .await;
         }
         _ => {
             debug!("Ignoring unexpected message");

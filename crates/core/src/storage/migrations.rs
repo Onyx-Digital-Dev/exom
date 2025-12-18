@@ -120,6 +120,33 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_invites_hall ON invites(hall_id);
         "#,
     },
+    Migration {
+        version: 3,
+        description: "Add last_connection table for auto-reconnect",
+        sql: r#"
+            -- Track last successful connection per user for auto-reconnect
+            CREATE TABLE IF NOT EXISTS last_connections (
+                user_id TEXT PRIMARY KEY,
+                hall_id TEXT NOT NULL,
+                invite_url TEXT NOT NULL,
+                host_addr TEXT,
+                last_connected_at TEXT NOT NULL,
+                epoch INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        "#,
+    },
+    Migration {
+        version: 4,
+        description: "Add sequence column to messages for deterministic ordering",
+        sql: r#"
+            -- Add sequence column for network message ordering
+            ALTER TABLE messages ADD COLUMN sequence INTEGER;
+
+            -- Index for efficient ordering
+            CREATE INDEX IF NOT EXISTS idx_messages_sequence ON messages(hall_id, sequence);
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

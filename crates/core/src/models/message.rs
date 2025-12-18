@@ -16,6 +16,8 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
     pub edited_at: Option<DateTime<Utc>>,
     pub is_deleted: bool,
+    /// Host-assigned sequence number for ordering (None for local-only messages)
+    pub sequence: Option<u64>,
 }
 
 impl Message {
@@ -28,6 +30,7 @@ impl Message {
             created_at: Utc::now(),
             edited_at: None,
             is_deleted: false,
+            sequence: None,
         }
     }
 }
@@ -36,6 +39,7 @@ impl Message {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageDisplay {
     pub id: Uuid,
+    pub sender_id: Uuid,
     pub sender_username: String,
     pub sender_role: HallRole,
     pub content: String,

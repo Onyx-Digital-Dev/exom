@@ -13,6 +13,9 @@ export struct MessageItem {
     is-edited: bool,
     is-group-start: bool,  // True if first message in a group from same sender
     is-host: bool,         // True if sender is current host
+    is-system: bool,       // True for system messages (join/leave/host change)
+    is-own: bool,          // True if message is from current user
+    is-pending: bool,      // True if message delivery not yet confirmed
 }
 
 export component ChatPanel inherits Rectangle {
@@ -20,9 +23,11 @@ export component ChatPanel inherits Rectangle {
     in property <string> host-name;
     in property <string> user-role;
     in property <[MessageItem]> messages;
+    in property <string> typing-indicator;
 
     callback send-message(string);
     callback delete-message(string);
+    callback typing-changed();
 
     background: Theme.color-bg;
 
@@ -82,19 +87,35 @@ export component ChatPanel inherits Rectangle {
                 padding: Theme.pad-md;
                 spacing: 0;
 
-                // Empty state when no messages
+                // Empty state when no messages - encourage first message
                 if root.messages.length == 0: EmptyState {
-                    title: "No Messages";
-                    description: "Start the conversation by sending a message.";
+                    title: "Welcome to " + root.hall-name;
+                    description: "Say hello to start the conversation.";
                     vertical-stretch: 1;
                 }
 
                 for msg in root.messages: Rectangle {
                     background: transparent;
-                    // More space before group start, compact spacing within group
-                    height: msg.is-group-start ? self.preferred-height + Theme.pad-md : self.preferred-height + 2px;
+                    // System messages get less vertical space
+                    height: msg.is-system ? self.preferred-height + Theme.pad-xs :
+                            (msg.is-group-start ? self.preferred-height + Theme.pad-md : self.preferred-height + 2px);
 
-                    VerticalLayout {
+                    // System message (join/leave/host change) - subtle centered text
+                    if msg.is-system: HorizontalLayout {
+                        alignment: center;
+                        padding-top: Theme.pad-xs;
+                        padding-bottom: Theme.pad-xs;
+
+                        Text {
+                            text: "— " + msg.content + " —";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-xs;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Regular message
+                    if !msg.is-system: VerticalLayout {
                         spacing: 2px;
                         padding-top: msg.is-group-start ? Theme.pad-sm : 0;
 
@@ -120,6 +141,17 @@ export component ChatPanel inherits Rectangle {
                                 text: msg.timestamp;
                                 color: Theme.color-text-dim;
                                 font-size: Theme.text-xs;
+                            }
+
+                            // Delivery indicator for own messages
+                            if msg.is-own: Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                y: 4px;
+                                border-radius: 3px;
+                                background: msg.is-pending ? transparent : Theme.color-online;
+                                border-width: msg.is-pending ? 1px : 0;
+                                border-color: Theme.color-text-dim;
                             }
                         }
 
@@ -148,6 +180,16 @@ export component ChatPanel inherits Rectangle {
                                 vertical-alignment: center;
                             }
 
+                            // Delivery indicator for own grouped messages
+                            if !msg.is-group-start && msg.is-own: Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: msg.is-pending ? transparent : Theme.color-online;
+                                border-width: msg.is-pending ? 1px : 0;
+                                border-color: Theme.color-text-dim;
+                            }
+
                             if msg.is-edited: Text {
                                 text: "(edited)";
                                 color: Theme.color-text-dim;
@@ -162,37 +204,74 @@ export component ChatPanel inherits Rectangle {
 
         Separator {}
 
-        // Compose bar
-        Rectangle {
-            height: 56px;
+        // Typing indicator - shows above compose bar when someone is typing
+        if root.typing-indicator != "": Rectangle {
+            height: 20px;
             background: Theme.color-panel;
 
             HorizontalLayout {
-                padding: Theme.pad-sm;
-                spacing: Theme.pad-sm;
+                padding-left: Theme.pad-md;
+                padding-right: Theme.pad-md;
+                alignment: start;
 
-                message-input := TextField {
-                    horizontal-stretch: 1;
-                    placeholder: "Type a message...";
-                    accepted => {
-                        if self.text != "" {
-                            root.send-message(self.text);
-                            self.clear();
-                            // Focus stays on input - typing-first UX
-                            self.set-focus();
+                Text {
+                    text: root.typing-indicator;
+                    color: Theme.color-text-dim;
+                    font-size: Theme.text-xs;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Compose bar with send acknowledgment
+        Rectangle {
+            height: 56px;
+            background: Theme.color-panel;
+            // Brief highlight when message sent (resets on typing)
+            border-width: compose-bar.sent-flash ? 2px : 0;
+            border-color: Theme.color-accent;
+
+            animate border-width {
+                duration: 100ms;
+            }
+
+            compose-bar := Rectangle {
+                property <bool> sent-flash: false;
+
+                HorizontalLayout {
+                    padding: Theme.pad-sm;
+                    spacing: Theme.pad-sm;
+
+                    message-input := TextField {
+                        horizontal-stretch: 1;
+                        placeholder: "Type a message...";
+                        accepted => {
+                            if self.text != "" {
+                                root.send-message(self.text);
+                                self.clear();
+                                // Flash acknowledgment and refocus
+                                compose-bar.sent-flash = true;
+                                self.set-focus();
+                            }
+                        }
+                        // Reset flash when user starts typing and notify typing
+                        edited => {
+                            compose-bar.sent-flash = false;
+                            root.typing-changed();
                         }
                     }
-                }
 
-                Button {
-                    label: "Send";
-                    primary: true;
-                    clicked => {
-                        if message-input.text != "" {
-                            root.send-message(message-input.text);
-                            message-input.clear();
-                            // Focus stays on input - typing-first UX
-                            message-input.set-focus();
+                    send-btn := Button {
+                        label: "Send";
+                        primary: true;
+                        clicked => {
+                            if message-input.text != "" {
+                                root.send-message(message-input.text);
+                                message-input.clear();
+                                // Flash acknowledgment and refocus
+                                compose-bar.sent-flash = true;
+                                message-input.set-focus();
+                            }
                         }
                     }
                 }
@@ -215,7 +294,7 @@ export component EmptyChatPanel inherits Rectangle {
         spacing: Theme.pad-sm;
 
         Text {
-            text: "No Hall Selected";
+            text: "Select a Hall";
             color: Theme.color-text-muted;
             font-size: Theme.text-lg;
             horizontal-alignment: center;

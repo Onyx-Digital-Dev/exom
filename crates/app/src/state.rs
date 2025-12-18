@@ -1,11 +1,30 @@
 //! Application state management
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
+use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use exom_core::{Database, Error, HallChest, Result};
 use uuid::Uuid;
+
+/// Ephemeral system message (not persisted)
+#[derive(Debug, Clone)]
+pub struct SystemMessage {
+    pub id: Uuid,
+    pub hall_id: Uuid,
+    pub content: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Tracked member for join/leave detection
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackedMember {
+    pub user_id: Uuid,
+    pub username: String,
+}
 
 /// Main application state
 pub struct AppState {
@@ -14,6 +33,14 @@ pub struct AppState {
     pub current_user_id: Arc<Mutex<Option<Uuid>>>,
     pub current_session_id: Arc<Mutex<Option<Uuid>>>,
     pub current_hall_id: Arc<Mutex<Option<Uuid>>>,
+    /// Ephemeral system messages (join/leave/host changes)
+    pub system_messages: Arc<Mutex<Vec<SystemMessage>>>,
+    /// Currently known members (for detecting joins/leaves)
+    pub known_members: Arc<Mutex<Vec<TrackedMember>>>,
+    /// Messages pending delivery confirmation
+    pub pending_messages: Arc<Mutex<HashSet<Uuid>>>,
+    /// Users currently typing in halls: user_id -> (username, last_typing_time)
+    pub typing_users: Arc<Mutex<HashMap<Uuid, (String, Instant)>>>,
 }
 
 impl AppState {
@@ -34,6 +61,10 @@ impl AppState {
             current_user_id: Arc::new(Mutex::new(None)),
             current_session_id: Arc::new(Mutex::new(None)),
             current_hall_id: Arc::new(Mutex::new(None)),
+            system_messages: Arc::new(Mutex::new(Vec::new())),
+            known_members: Arc::new(Mutex::new(Vec::new())),
+            pending_messages: Arc::new(Mutex::new(HashSet::new())),
+            typing_users: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -88,5 +119,155 @@ impl AppState {
             .ok()
             .flatten()
             .map(|u| u.username)
+    }
+
+    /// Add a system message (join/leave/host change)
+    pub fn add_system_message(&self, hall_id: Uuid, content: String) {
+        let msg = SystemMessage {
+            id: Uuid::new_v4(),
+            hall_id,
+            content,
+            timestamp: Utc::now(),
+        };
+        self.system_messages.lock().unwrap().push(msg);
+    }
+
+    /// Get system messages for a hall
+    pub fn get_system_messages(&self, hall_id: Uuid) -> Vec<SystemMessage> {
+        self.system_messages
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.hall_id == hall_id)
+            .cloned()
+            .collect()
+    }
+
+    /// Clear system messages for a hall (e.g., when leaving)
+    pub fn clear_system_messages(&self, hall_id: Uuid) {
+        self.system_messages
+            .lock()
+            .unwrap()
+            .retain(|m| m.hall_id != hall_id);
+    }
+
+    /// Update known members and return (joined, left) usernames
+    pub fn update_known_members(
+        &self,
+        new_members: Vec<TrackedMember>,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut known = self.known_members.lock().unwrap();
+        let my_user_id = self.current_user_id();
+
+        // Find who joined (in new but not in known)
+        let joined: Vec<String> = new_members
+            .iter()
+            .filter(|m| {
+                !known.iter().any(|k| k.user_id == m.user_id)
+                    && my_user_id.map_or(true, |uid| uid != m.user_id)
+            })
+            .map(|m| m.username.clone())
+            .collect();
+
+        // Find who left (in known but not in new)
+        let left: Vec<String> = known
+            .iter()
+            .filter(|k| {
+                !new_members.iter().any(|m| m.user_id == k.user_id)
+                    && my_user_id.map_or(true, |uid| uid != k.user_id)
+            })
+            .map(|k| k.username.clone())
+            .collect();
+
+        // Update known members
+        *known = new_members;
+
+        (joined, left)
+    }
+
+    /// Clear known members (e.g., when disconnecting)
+    pub fn clear_known_members(&self) {
+        self.known_members.lock().unwrap().clear();
+    }
+
+    /// Mark a message as pending delivery
+    pub fn add_pending_message(&self, message_id: Uuid) {
+        self.pending_messages.lock().unwrap().insert(message_id);
+    }
+
+    /// Mark a message as delivered (remove from pending)
+    pub fn confirm_message(&self, message_id: Uuid) {
+        self.pending_messages.lock().unwrap().remove(&message_id);
+    }
+
+    /// Check if a message is pending delivery
+    pub fn is_message_pending(&self, message_id: Uuid) -> bool {
+        self.pending_messages.lock().unwrap().contains(&message_id)
+    }
+
+    /// Reconcile pending messages against database
+    /// Messages that exist in DB but are still marked pending should be confirmed
+    /// Returns count of messages reconciled
+    pub fn reconcile_pending_messages(&self, _hall_id: Uuid) -> usize {
+        let pending: Vec<Uuid> = self.pending_messages.lock().unwrap().iter().cloned().collect();
+        if pending.is_empty() {
+            return 0;
+        }
+
+        // Check which pending messages exist in DB
+        let to_confirm: Vec<Uuid> = {
+            let db = self.db.lock().unwrap();
+            pending
+                .into_iter()
+                .filter(|msg_id| db.messages().find_by_id(*msg_id).ok().flatten().is_some())
+                .collect()
+        };
+
+        // Confirm them (db lock released)
+        let count = to_confirm.len();
+        for msg_id in to_confirm {
+            self.confirm_message(msg_id);
+        }
+
+        count
+    }
+
+    /// Set a user as typing (or update their last typing time)
+    pub fn set_user_typing(&self, user_id: Uuid, username: String) {
+        self.typing_users
+            .lock()
+            .unwrap()
+            .insert(user_id, (username, Instant::now()));
+    }
+
+    /// Clear a user's typing status
+    pub fn clear_user_typing(&self, user_id: Uuid) {
+        self.typing_users.lock().unwrap().remove(&user_id);
+    }
+
+    /// Clear all typing users (e.g., when disconnecting)
+    pub fn clear_all_typing(&self) {
+        self.typing_users.lock().unwrap().clear();
+    }
+
+    /// Get list of currently typing users (excluding self), returns (user_id, username)
+    pub fn get_typing_users(&self) -> Vec<(Uuid, String)> {
+        let my_user_id = self.current_user_id();
+        self.typing_users
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(uid, _)| my_user_id.map_or(true, |my_id| **uid != my_id))
+            .map(|(uid, (username, _))| (*uid, username.clone()))
+            .collect()
+    }
+
+    /// Prune stale typing entries (older than threshold)
+    /// Returns true if any entries were pruned
+    pub fn prune_typing_users(&self, max_age_ms: u64) -> bool {
+        let mut typing = self.typing_users.lock().unwrap();
+        let before = typing.len();
+        typing.retain(|_, (_, instant)| instant.elapsed().as_millis() < max_age_ms as u128);
+        typing.len() < before
     }
 }

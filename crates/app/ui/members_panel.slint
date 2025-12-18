@@ -27,12 +27,17 @@ export component MembersPanel inherits Rectangle {
     in property <string> chest-path;
     in property <string> chest-status;
     in property <string> current-user-id;
+    in property <string> current-user-role: "Fellow";  // User's role for permission hints
     in property <string> action-status;  // Status for member actions
+    in property <string> network-status: "Working offline";
+    in property <bool> is-network-connected: false;
+    in property <string> invite-url: "";
 
     callback promote-member(string);
     callback demote-member(string);
     callback kick-member(string);
     callback load-chest-files();
+    callback copy-invite();
 
     property <string> selected-member-id;
     property <bool> show-context-menu: false;
@@ -105,11 +110,27 @@ export component MembersPanel inherits Rectangle {
                     padding: Theme.pad-sm;
                     spacing: 2px;
 
-                    // Empty state when no members
-                    if root.members.length == 0: EmptyState {
-                        title: "No Members";
-                        description: "Members will appear here when they join.";
+                    // Guidance when alone in the hall
+                    if root.members.length <= 1: VerticalLayout {
                         vertical-stretch: 1;
+                        alignment: center;
+                        spacing: Theme.pad-sm;
+                        padding: Theme.pad-md;
+
+                        Text {
+                            text: root.members.length == 0 ? "No Members" : "Just You";
+                            color: Theme.color-text-muted;
+                            font-size: Theme.text-md;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: root.invite-url != "" ? "Share the invite link below to bring others in." : "Go online to invite others.";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-sm;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
                     }
 
                     for member in root.members: Rectangle {
@@ -153,24 +174,46 @@ export component MembersPanel inherits Rectangle {
 
                                     Text {
                                         text: member.name;
-                                        color: Theme.color-text;
+                                        // Dim offline users
+                                        color: member.is-online ? Theme.color-text : Theme.color-text-dim;
                                         font-size: Theme.text-md;
                                         overflow: elide;
                                     }
 
                                     if member.is-you: Text {
                                         text: "(You)";
-                                        color: Theme.color-text-muted;
+                                        color: Theme.color-accent;
                                         font-size: Theme.text-sm;
                                         vertical-alignment: center;
                                     }
 
-                                    if member.is-host: HostBadge {}
+                                    if member.is-host: HorizontalLayout {
+                                        spacing: 4px;
+                                        HostBadge {}
+                                        Text {
+                                            text: "(Host)";
+                                            color: Theme.color-text-muted;
+                                            font-size: Theme.text-xs;
+                                            vertical-alignment: center;
+                                        }
+                                    }
                                 }
 
-                                RoleBadge {
-                                    role: member.role;
-                                    subtle: true;
+                                HorizontalLayout {
+                                    spacing: Theme.pad-xs;
+
+                                    RoleBadge {
+                                        role: member.role;
+                                        subtle: true;
+                                    }
+
+                                    // Show offline status
+                                    if !member.is-online: Text {
+                                        text: "(offline)";
+                                        color: Theme.color-text-dim;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
                         }
@@ -180,14 +223,28 @@ export component MembersPanel inherits Rectangle {
 
             // Context actions for selected member
             if root.selected-member-id != "" && root.selected-member-id != root.current-user-id: Rectangle {
-                height: root.action-status != "" ? 100px : 80px;
+                // Check if user has management permissions (Moderator or higher)
+                property <bool> can-manage: root.current-user-role == "Builder" ||
+                                           root.current-user-role == "Prefect" ||
+                                           root.current-user-role == "Moderator";
+
+                height: root.action-status != "" ? 120px : (can-manage ? 80px : 60px);
                 background: Theme.color-panel-elevated;
 
                 VerticalLayout {
                     padding: Theme.pad-sm;
                     spacing: Theme.pad-xs;
 
-                    HorizontalLayout {
+                    // Show permission hint if no permissions
+                    if !can-manage: Text {
+                        text: "Only Moderators and above can manage members";
+                        color: Theme.color-text-dim;
+                        font-size: Theme.text-xs;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    if can-manage: HorizontalLayout {
                         spacing: Theme.pad-xs;
 
                         SecondaryButton {
@@ -203,7 +260,7 @@ export component MembersPanel inherits Rectangle {
                         }
                     }
 
-                    DangerButton {
+                    if can-manage: DangerButton {
                         label: "Kick";
                         clicked => { root.kick-member(root.selected-member-id); root.selected-member-id = ""; }
                     }
@@ -308,15 +365,54 @@ export component MembersPanel inherits Rectangle {
 
         Separator {}
 
-        // Settings button
+        // Hall info footer (network status + invite)
         Rectangle {
-            height: 48px;
+            height: root.invite-url != "" ? 80px : 48px;
             background: Theme.color-panel;
 
-            SecondaryButton {
-                x: Theme.pad-sm;
-                width: parent.width - Theme.pad-md;
-                label: "Hall Settings";
+            VerticalLayout {
+                padding: Theme.pad-sm;
+                spacing: Theme.pad-xs;
+
+                // Network status row
+                HorizontalLayout {
+                    spacing: Theme.pad-sm;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        background: root.is-network-connected ? Theme.color-online : Theme.color-text-dim;
+                        y: 5px;
+                    }
+
+                    Text {
+                        text: root.network-status;
+                        color: Theme.color-text-muted;
+                        font-size: Theme.text-sm;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Invite URL row (when hosting or connected)
+                if root.invite-url != "": HorizontalLayout {
+                    spacing: Theme.pad-xs;
+
+                    Text {
+                        text: root.invite-url;
+                        color: Theme.color-text-dim;
+                        font-size: Theme.text-xs;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+
+                    SecondaryButton {
+                        label: "Copy";
+                        clicked => { root.copy-invite(); }
+                    }
+                }
             }
         }
     }

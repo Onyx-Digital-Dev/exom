@@ -25,6 +25,22 @@ impl NetRole {
     pub fn can_host(self) -> bool {
         self >= NetRole::Agent
     }
+
+    /// Convert from a role value (matches HallRole values)
+    pub fn from_value(v: u8) -> Self {
+        match v {
+            5 => NetRole::Builder,
+            4 => NetRole::Prefect,
+            3 => NetRole::Moderator,
+            2 => NetRole::Agent,
+            _ => NetRole::Fellow,
+        }
+    }
+
+    /// Convert to a role value (matches HallRole values)
+    pub fn to_value(self) -> u8 {
+        self as u8
+    }
 }
 
 /// Information about a connected peer
@@ -46,6 +62,9 @@ pub struct NetMessage {
     pub sender_role: NetRole,
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    /// Sequence number assigned by host for ordering
+    #[serde(default)]
+    pub sequence: u64,
 }
 
 /// Network protocol messages
@@ -66,6 +85,7 @@ pub enum Message {
         hall_id: Uuid,
         host_id: Uuid,
         members: Vec<PeerInfo>,
+        epoch: u64,
     },
 
     /// Server rejects join request
@@ -76,6 +96,17 @@ pub enum Message {
 
     /// Chat message from a peer
     Chat(NetMessage),
+
+    /// Acknowledgment that a message was received and broadcast
+    MessageAck { message_id: Uuid },
+
+    /// User typing status in a hall
+    Typing {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
 
     /// Updated member list (broadcast on join/leave)
     MemberList { members: Vec<PeerInfo> },
@@ -91,6 +122,36 @@ pub enum Message {
 
     /// Server is shutting down
     ServerShutdown,
+
+    /// Host heartbeat (sent every 2s)
+    HostHeartbeat {
+        hall_id: Uuid,
+        epoch: u64,
+        host_user_id: Uuid,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// Election has started (host may be dead)
+    HostElectionStarted { hall_id: Uuid, epoch: u64 },
+
+    /// New host elected
+    HostElected {
+        hall_id: Uuid,
+        epoch: u64,
+        host_user_id: Uuid,
+        host_addr: String,
+        host_port: u16,
+    },
+
+    /// Request messages since a sequence number (for sync on reconnect)
+    SyncSince { hall_id: Uuid, last_sequence: u64 },
+
+    /// Batch of messages in response to SyncSince
+    SyncBatch {
+        hall_id: Uuid,
+        from_sequence: u64,
+        messages: Vec<NetMessage>,
+    },
 }
 
 impl Message {
@@ -119,6 +180,7 @@ mod tests {
             sender_role: NetRole::Agent,
             content: "Hello".to_string(),
             timestamp: Utc::now(),
+            sequence: 0,
         });
 
         let bytes = msg.to_bytes().unwrap();

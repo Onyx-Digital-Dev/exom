@@ -55,8 +55,12 @@ export component MainWindow inherits Window {
     property <int> selected-hall-index: -1;
 
     // Network state
-    in-out property <string> network-status: "Offline";
+    in-out property <string> network-status: "Working offline";
+    in-out property <bool> is-network-connected: false;
     in-out property <string> invite-url: "";
+
+    // Typing indicator
+    in-out property <string> typing-indicator: "";
 
     // Switcher filtering callback
     callback filter-switcher-halls(string);
@@ -81,6 +85,7 @@ export component MainWindow inherits Window {
     callback load-messages();
     callback send-message(string);
     callback delete-message(string);
+    callback typing-changed();
 
     // Member callbacks
     callback load-members();
@@ -130,7 +135,7 @@ export component MainWindow inherits Window {
                         width: 8px;
                         height: 8px;
                         border-radius: 4px;
-                        background: root.network-status == "Connected" || root.network-status == "Hosting" ? Theme.color-online : Theme.color-text-dim;
+                        background: root.is-network-connected ? Theme.color-online : Theme.color-text-dim;
                     }
                 }
 
@@ -190,8 +195,10 @@ export component MainWindow inherits Window {
                 host-name: root.current-host-name;
                 user-role: root.current-user-role;
                 messages: root.messages;
+                typing-indicator: root.typing-indicator;
                 send-message(msg) => { root.send-message(msg); }
                 delete-message(id) => { root.delete-message(id); }
+                typing-changed => { root.typing-changed(); }
             }
 
             EmptyChatPanel {
@@ -209,11 +216,16 @@ export component MainWindow inherits Window {
                 chest-path: root.chest-path;
                 chest-status: root.chest-status;
                 current-user-id: root.current-user-id;
+                current-user-role: root.current-user-role;
                 action-status: root.member-action-status;
+                network-status: root.network-status;
+                is-network-connected: root.is-network-connected;
+                invite-url: root.invite-url;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }
                 load-chest-files => { root.load-chest-files(); }
+                copy-invite => { root.copy-invite(); }
             }
 
             // Empty right panel placeholder
