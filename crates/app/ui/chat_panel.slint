@@ -179,37 +179,54 @@ export component ChatPanel inherits Rectangle {
 
         Separator {}
 
-        // Compose bar
+        // Compose bar with send acknowledgment
         Rectangle {
             height: 56px;
             background: Theme.color-panel;
+            // Brief highlight when message sent (resets on typing)
+            border-width: compose-bar.sent-flash ? 2px : 0;
+            border-color: Theme.color-accent;
 
-            HorizontalLayout {
-                padding: Theme.pad-sm;
-                spacing: Theme.pad-sm;
+            animate border-width {
+                duration: 100ms;
+            }
 
-                message-input := TextField {
-                    horizontal-stretch: 1;
-                    placeholder: "Type a message...";
-                    accepted => {
-                        if self.text != "" {
-                            root.send-message(self.text);
-                            self.clear();
-                            // Focus stays on input - typing-first UX
-                            self.set-focus();
+            compose-bar := Rectangle {
+                property <bool> sent-flash: false;
+
+                HorizontalLayout {
+                    padding: Theme.pad-sm;
+                    spacing: Theme.pad-sm;
+
+                    message-input := TextField {
+                        horizontal-stretch: 1;
+                        placeholder: "Type a message...";
+                        accepted => {
+                            if self.text != "" {
+                                root.send-message(self.text);
+                                self.clear();
+                                // Flash acknowledgment and refocus
+                                compose-bar.sent-flash = true;
+                                self.set-focus();
+                            }
+                        }
+                        // Reset flash when user starts typing
+                        edited => {
+                            compose-bar.sent-flash = false;
                         }
                     }
-                }
 
-                Button {
-                    label: "Send";
-                    primary: true;
-                    clicked => {
-                        if message-input.text != "" {
-                            root.send-message(message-input.text);
-                            message-input.clear();
-                            // Focus stays on input - typing-first UX
-                            message-input.set-focus();
+                    send-btn := Button {
+                        label: "Send";
+                        primary: true;
+                        clicked => {
+                            if message-input.text != "" {
+                                root.send-message(message-input.text);
+                                message-input.clear();
+                                // Flash acknowledgment and refocus
+                                compose-bar.sent-flash = true;
+                                message-input.set-focus();
+                            }
                         }
                     }
                 }
