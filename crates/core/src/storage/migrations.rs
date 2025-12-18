@@ -138,11 +138,9 @@ fn init_migrations_table(conn: &Connection) -> Result<()> {
 /// Get the current schema version
 fn get_current_version(conn: &Connection) -> Result<u32> {
     let version: Option<u32> = conn
-        .query_row(
-            "SELECT MAX(version) FROM schema_migrations",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
         .unwrap_or(None);
     Ok(version.unwrap_or(0))
 }

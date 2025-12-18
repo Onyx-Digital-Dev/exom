@@ -134,7 +134,5 @@ pub trait InviteRepository {
 pub trait Storage: UserRepository + HallRepository + MessageRepository + InviteRepository {}
 
 // Blanket implementation: any type implementing all traits implements Storage
-impl<T> Storage for T where
-    T: UserRepository + HallRepository + MessageRepository + InviteRepository
-{
-}
+impl<T> Storage for T where T: UserRepository + HallRepository + MessageRepository + InviteRepository
+{}

@@ -60,11 +60,9 @@ impl Database {
     /// Get current schema version
     pub fn schema_version(&self) -> u32 {
         self.conn
-            .query_row(
-                "SELECT MAX(version) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0)
     }
 
@@ -164,7 +162,8 @@ impl HallRepository for Database {
     }
 
     fn update_online_status(&self, user_id: Uuid, hall_id: Uuid, is_online: bool) -> Result<()> {
-        self.halls().update_online_status(user_id, hall_id, is_online)
+        self.halls()
+            .update_online_status(user_id, hall_id, is_online)
     }
 
     fn remove_member(&self, user_id: Uuid, hall_id: Uuid) -> Result<()> {
