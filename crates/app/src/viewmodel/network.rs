@@ -70,8 +70,17 @@ pub fn setup_network_bindings(
             }
         };
 
-        // Set URL after releasing lock
+        // Copy to clipboard and set URL after releasing lock
         if let Some(url) = invite_url {
+            // Copy to clipboard
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                if let Err(e) = clipboard.set_text(&url) {
+                    tracing::warn!(error = %e, "Failed to copy invite URL to clipboard");
+                } else {
+                    tracing::debug!("Invite URL copied to clipboard");
+                }
+            }
+
             if let Some(w) = window_weak.upgrade() {
                 w.set_invite_url(url.into());
             }

@@ -28,11 +28,14 @@ export component MembersPanel inherits Rectangle {
     in property <string> chest-status;
     in property <string> current-user-id;
     in property <string> action-status;  // Status for member actions
+    in property <string> network-status: "Offline";
+    in property <string> invite-url: "";
 
     callback promote-member(string);
     callback demote-member(string);
     callback kick-member(string);
     callback load-chest-files();
+    callback copy-invite();
 
     property <string> selected-member-id;
     property <bool> show-context-menu: false;
@@ -308,15 +311,54 @@ export component MembersPanel inherits Rectangle {
 
         Separator {}
 
-        // Settings button
+        // Hall info footer (network status + invite)
         Rectangle {
-            height: 48px;
+            height: root.invite-url != "" ? 80px : 48px;
             background: Theme.color-panel;
 
-            SecondaryButton {
-                x: Theme.pad-sm;
-                width: parent.width - Theme.pad-md;
-                label: "Hall Settings";
+            VerticalLayout {
+                padding: Theme.pad-sm;
+                spacing: Theme.pad-xs;
+
+                // Network status row
+                HorizontalLayout {
+                    spacing: Theme.pad-sm;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        background: root.network-status == "Connected" || root.network-status == "Hosting" ? Theme.color-online : Theme.color-text-dim;
+                        y: 5px;
+                    }
+
+                    Text {
+                        text: root.network-status;
+                        color: Theme.color-text-muted;
+                        font-size: Theme.text-sm;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Invite URL row (when hosting or connected)
+                if root.invite-url != "": HorizontalLayout {
+                    spacing: Theme.pad-xs;
+
+                    Text {
+                        text: root.invite-url;
+                        color: Theme.color-text-dim;
+                        font-size: Theme.text-xs;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+
+                    SecondaryButton {
+                        label: "Copy";
+                        clicked => { root.copy-invite(); }
+                    }
+                }
             }
         }
     }

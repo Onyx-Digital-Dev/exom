@@ -210,10 +210,13 @@ export component MainWindow inherits Window {
                 chest-status: root.chest-status;
                 current-user-id: root.current-user-id;
                 action-status: root.member-action-status;
+                network-status: root.network-status;
+                invite-url: root.invite-url;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }
                 load-chest-files => { root.load-chest-files(); }
+                copy-invite => { root.copy-invite(); }
             }
 
             // Empty right panel placeholder
