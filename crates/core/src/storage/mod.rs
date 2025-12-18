@@ -5,9 +5,16 @@ mod invites;
 mod messages;
 mod migrations;
 mod parse;
+mod traits;
 mod users;
 
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
 use crate::error::Result;
+use crate::models::{
+    Hall, HallRole, Invite, MemberInfo, Membership, Message, MessageDisplay, Session, User,
+};
 use rusqlite::Connection;
 use std::path::Path;
 use tracing::instrument;
@@ -15,6 +22,7 @@ use tracing::instrument;
 pub use halls::HallStore;
 pub use invites::InviteStore;
 pub use messages::MessageStore;
+pub use traits::{HallRepository, InviteRepository, MessageRepository, Storage, UserRepository};
 pub use users::UserStore;
 
 /// Main database handle
@@ -60,23 +68,171 @@ impl Database {
             .unwrap_or(0)
     }
 
-    /// Get user store
+    /// Get user store (legacy accessor)
     pub fn users(&self) -> UserStore<'_> {
         UserStore::new(&self.conn)
     }
 
-    /// Get hall store
+    /// Get hall store (legacy accessor)
     pub fn halls(&self) -> HallStore<'_> {
         HallStore::new(&self.conn)
     }
 
-    /// Get message store
+    /// Get message store (legacy accessor)
     pub fn messages(&self) -> MessageStore<'_> {
         MessageStore::new(&self.conn)
     }
 
-    /// Get invite store
+    /// Get invite store (legacy accessor)
     pub fn invites(&self) -> InviteStore<'_> {
         InviteStore::new(&self.conn)
+    }
+}
+
+// Implement repository traits for Database
+// This enables using Database through the trait interface
+
+impl UserRepository for Database {
+    fn create_user(&self, user: &User) -> Result<()> {
+        self.users().create(user)
+    }
+
+    fn find_user_by_id(&self, id: Uuid) -> Result<Option<User>> {
+        self.users().find_by_id(id)
+    }
+
+    fn find_user_by_username(&self, username: &str) -> Result<Option<User>> {
+        self.users().find_by_username(username)
+    }
+
+    fn update_last_login(&self, user_id: Uuid) -> Result<()> {
+        self.users().update_last_login(user_id)
+    }
+
+    fn create_session(&self, session: &Session) -> Result<()> {
+        self.users().create_session(session)
+    }
+
+    fn find_valid_session(&self, session_id: Uuid) -> Result<Option<Session>> {
+        self.users().find_valid_session(session_id)
+    }
+
+    fn delete_session(&self, session_id: Uuid) -> Result<()> {
+        self.users().delete_session(session_id)
+    }
+
+    fn delete_user_sessions(&self, user_id: Uuid) -> Result<()> {
+        self.users().delete_user_sessions(user_id)
+    }
+
+    fn cleanup_expired_sessions(&self) -> Result<u64> {
+        self.users().cleanup_expired_sessions()
+    }
+}
+
+impl HallRepository for Database {
+    fn create_hall(&self, hall: &Hall) -> Result<()> {
+        self.halls().create(hall)
+    }
+
+    fn find_hall_by_id(&self, id: Uuid) -> Result<Option<Hall>> {
+        self.halls().find_by_id(id)
+    }
+
+    fn update_hall(&self, hall: &Hall) -> Result<()> {
+        self.halls().update(hall)
+    }
+
+    fn delete_hall(&self, hall_id: Uuid) -> Result<()> {
+        self.halls().delete(hall_id)
+    }
+
+    fn list_halls_for_user(&self, user_id: Uuid) -> Result<Vec<Hall>> {
+        self.halls().list_for_user(user_id)
+    }
+
+    fn add_member(&self, membership: &Membership) -> Result<()> {
+        self.halls().add_member(membership)
+    }
+
+    fn get_membership(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<Membership>> {
+        self.halls().get_membership(user_id, hall_id)
+    }
+
+    fn update_role(&self, user_id: Uuid, hall_id: Uuid, new_role: HallRole) -> Result<()> {
+        self.halls().update_role(user_id, hall_id, new_role)
+    }
+
+    fn update_online_status(&self, user_id: Uuid, hall_id: Uuid, is_online: bool) -> Result<()> {
+        self.halls().update_online_status(user_id, hall_id, is_online)
+    }
+
+    fn remove_member(&self, user_id: Uuid, hall_id: Uuid) -> Result<()> {
+        self.halls().remove_member(user_id, hall_id)
+    }
+
+    fn list_members(&self, hall_id: Uuid) -> Result<Vec<MemberInfo>> {
+        self.halls().list_members(hall_id)
+    }
+
+    fn get_user_role(&self, user_id: Uuid, hall_id: Uuid) -> Result<Option<HallRole>> {
+        self.halls().get_user_role(user_id, hall_id)
+    }
+}
+
+impl MessageRepository for Database {
+    fn create_message(&self, message: &Message) -> Result<()> {
+        self.messages().create(message)
+    }
+
+    fn find_message_by_id(&self, id: Uuid) -> Result<Option<Message>> {
+        self.messages().find_by_id(id)
+    }
+
+    fn list_messages_for_hall(
+        &self,
+        hall_id: Uuid,
+        limit: u32,
+        before: Option<DateTime<Utc>>,
+    ) -> Result<Vec<MessageDisplay>> {
+        self.messages().list_for_hall(hall_id, limit, before)
+    }
+
+    fn update_message_content(&self, message_id: Uuid, new_content: &str) -> Result<()> {
+        self.messages().update_content(message_id, new_content)
+    }
+
+    fn delete_message(&self, message_id: Uuid) -> Result<()> {
+        self.messages().delete(message_id)
+    }
+
+    fn count_messages_for_hall(&self, hall_id: Uuid) -> Result<u64> {
+        self.messages().count_for_hall(hall_id)
+    }
+}
+
+impl InviteRepository for Database {
+    fn create_invite(&self, invite: &Invite) -> Result<()> {
+        self.invites().create(invite)
+    }
+
+    fn find_invite_by_token(&self, token: &str) -> Result<Option<Invite>> {
+        self.invites().find_by_token(token)
+    }
+
+    fn list_invites_for_hall(&self, hall_id: Uuid) -> Result<Vec<Invite>> {
+        self.invites().list_for_hall(hall_id)
+    }
+
+    fn increment_use_count(&self, invite_id: Uuid) -> Result<()> {
+        self.invites().increment_use_count(invite_id)
+    }
+
+    fn revoke_invite(&self, invite_id: Uuid) -> Result<()> {
+        self.invites().revoke(invite_id)
+    }
+
+    fn delete_invite(&self, invite_id: Uuid) -> Result<()> {
+        self.invites().delete(invite_id)
     }
 }

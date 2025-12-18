@@ -14,4 +14,6 @@ pub use error::{Error, Result};
 pub use hosting::*;
 pub use models::*;
 pub use permissions::*;
-pub use storage::Database;
+pub use storage::{
+    Database, HallRepository, InviteRepository, MessageRepository, Storage, UserRepository,
+};
