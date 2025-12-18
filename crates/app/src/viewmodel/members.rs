@@ -234,10 +234,12 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
         };
         drop(db);
 
-        // Check chest access
+        // Check chest access - Fellows cannot view
         if !PermissionMatrix::can_perform(role, HallAction::ViewChest) {
             if let Some(w) = window_weak.upgrade() {
-                w.set_chest_status("No access".into());
+                w.set_chest_path("".into());
+                w.set_chest_files(ModelRc::default());
+                w.set_chest_status("Locked - Fellows cannot view Chest".into());
             }
             return;
         }
@@ -266,11 +268,23 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
         let chest_path = chest.hall_path(hall_id);
         drop(chest);
 
+        // Format path for display (replace home dir with ~)
+        let path_display = if let Ok(home) = std::env::var("HOME") {
+            let path_str = chest_path.to_string_lossy();
+            if path_str.starts_with(&home) {
+                format!("~{}", &path_str[home.len()..])
+            } else {
+                path_str.to_string()
+            }
+        } else {
+            chest_path.to_string_lossy().to_string()
+        };
+
         if let Some(w) = window_weak.upgrade() {
             let model = std::rc::Rc::new(VecModel::from(file_items));
             w.set_chest_files(ModelRc::from(model));
-            w.set_chest_path(chest_path.to_string_lossy().to_string().into());
-            w.set_chest_status("Local only - sync coming later".into());
+            w.set_chest_path(path_display.into());
+            w.set_chest_status("Local only \u{2014} sync coming later".into());
         }
     });
 }
