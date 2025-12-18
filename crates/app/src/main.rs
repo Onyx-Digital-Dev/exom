@@ -1,7 +1,11 @@
 //! Exom - Hall-based collaboration platform
+//!
+//! A Wayland-first desktop application for hall-based collaboration.
+//! Supports X11 via XWayland for compatibility.
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod platform;
 mod state;
 mod viewmodel;
 
@@ -15,6 +19,9 @@ fn main() {
         .init();
 
     tracing::info!("Starting Exom");
+
+    // Log platform and display server information
+    platform::log_platform_info();
 
     // Initialize application state
     let app_state = match state::AppState::new() {
