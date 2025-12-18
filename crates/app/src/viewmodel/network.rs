@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
-use exom_core::Message;
+use chrono::Utc;
+use exom_core::{LastConnection, Message};
 use exom_net::{NetMessage, NetRole, PeerInfo};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 use tokio::sync::Mutex;
 
-use crate::network::{NetworkEvent, NetworkManager, NetworkState};
+use crate::network::{ConnectionInfo, NetworkEvent, NetworkManager, NetworkState};
 use crate::state::AppState;
 use crate::MainWindow;
 use crate::MemberItem;
@@ -86,6 +87,7 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                 NetworkState::Connecting => "Connecting...",
                 NetworkState::Connected => "Connected",
                 NetworkState::Hosting => "Hosting",
+                NetworkState::Reconnecting => "Reconnecting...",
             };
             window.set_network_status(status.into());
         }
@@ -135,6 +137,34 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             tracing::info!(new_host_id = %new_host_id, "Host changed");
             // The members list will be updated via MembersUpdated event
         }
+        NetworkEvent::Connected(conn_info) => {
+            // Persist connection info for auto-reconnect
+            persist_connection(state, &conn_info);
+        }
+    }
+}
+
+/// Persist connection info for auto-reconnect on next launch
+fn persist_connection(state: &Arc<AppState>, conn_info: &ConnectionInfo) {
+    let user_id = match state.current_user_id() {
+        Some(id) => id,
+        None => return,
+    };
+
+    let last_conn = LastConnection {
+        user_id,
+        hall_id: conn_info.hall_id,
+        invite_url: conn_info.invite_url.clone(),
+        host_addr: conn_info.host_addr.clone(),
+        last_connected_at: Utc::now(),
+        epoch: conn_info.epoch,
+    };
+
+    let db = state.db.lock().unwrap();
+    if let Err(e) = db.connections().save_last_connection(&last_conn) {
+        tracing::warn!(error = %e, "Failed to persist connection info");
+    } else {
+        tracing::debug!(hall_id = %conn_info.hall_id, "Connection info persisted");
     }
 }
 
@@ -192,4 +222,60 @@ fn net_role_display(role: NetRole) -> &'static str {
         NetRole::Agent => "Agent",
         NetRole::Fellow => "Fellow",
     }
+}
+
+/// Attempt auto-reconnect to last hall if available
+/// Should be called after session restore
+pub fn try_auto_reconnect(state: Arc<AppState>, network_manager: Arc<Mutex<NetworkManager>>) {
+    let user_id = match state.current_user_id() {
+        Some(id) => id,
+        None => return,
+    };
+
+    // Get last connection info
+    let last_conn = {
+        let db = state.db.lock().unwrap();
+        match db.connections().get_last_connection(user_id) {
+            Ok(Some(conn)) => conn,
+            Ok(None) => {
+                tracing::debug!("No previous connection to restore");
+                return;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to get last connection");
+                return;
+            }
+        }
+    };
+
+    // Get username for reconnection
+    let username = {
+        let db = state.db.lock().unwrap();
+        db.users()
+            .find_by_id(user_id)
+            .ok()
+            .flatten()
+            .map(|u| u.username)
+            .unwrap_or_else(|| "Unknown".to_string())
+    };
+
+    tracing::info!(
+        hall_id = %last_conn.hall_id,
+        invite_url = %last_conn.invite_url,
+        "Starting auto-reconnect to last hall"
+    );
+
+    // Start reconnect with backoff
+    tokio::spawn(async move {
+        if let Ok(nm) = network_manager.try_lock() {
+            let _ = nm
+                .start_reconnect(
+                    last_conn.invite_url,
+                    user_id,
+                    username,
+                    NetRole::Agent, // Default role for reconnect
+                )
+                .await;
+        }
+    });
 }

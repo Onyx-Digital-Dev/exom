@@ -20,6 +20,17 @@ pub enum NetworkState {
     Connected,
     /// Attempting to connect
     Connecting,
+    /// Reconnecting after disconnect (with backoff)
+    Reconnecting,
+}
+
+/// Connection info for persistence and reconnect
+#[derive(Debug, Clone)]
+pub struct ConnectionInfo {
+    pub hall_id: Uuid,
+    pub invite_url: String,
+    pub host_addr: Option<String>,
+    pub epoch: u64,
 }
 
 /// Events from the network layer to the UI
@@ -39,6 +50,8 @@ pub enum NetworkEvent {
     HostDisconnected { hall_id: Uuid, was_host: bool },
     /// Host changed to a new user
     HostChanged { new_host_id: Uuid },
+    /// Successfully connected - persist this info
+    Connected(ConnectionInfo),
 }
 
 /// Network manager handle
@@ -57,6 +70,13 @@ struct NetworkManagerState {
     /// Current user's info for potential host takeover
     user_id: Option<Uuid>,
     user_role: Option<NetRole>,
+    username: Option<String>,
+    /// Epoch for detecting stale reconnect attempts
+    epoch: u64,
+    /// Are we in a reconnect loop?
+    reconnecting: bool,
+    /// Cancel signal for reconnect loop
+    cancel_reconnect: bool,
 }
 
 enum NetworkCommand {
@@ -74,6 +94,15 @@ enum NetworkCommand {
         username: String,
         role: NetRole,
     },
+    /// Start auto-reconnect with backoff
+    StartReconnect {
+        invite_url: String,
+        user_id: Uuid,
+        username: String,
+        role: NetRole,
+    },
+    /// Cancel ongoing reconnect
+    CancelReconnect,
     SendChat(NetMessage),
     Disconnect,
 }
@@ -92,6 +121,10 @@ impl NetworkManager {
             host_id: None,
             user_id: None,
             user_role: None,
+            username: None,
+            epoch: 0,
+            reconnecting: false,
+            cancel_reconnect: false,
         }));
 
         // Spawn the network task
@@ -165,6 +198,30 @@ impl NetworkManager {
         let _ = self.cmd_tx.send(NetworkCommand::Disconnect).await;
     }
 
+    /// Start auto-reconnect with exponential backoff
+    pub async fn start_reconnect(
+        &self,
+        invite_url: String,
+        user_id: Uuid,
+        username: String,
+        role: NetRole,
+    ) -> Result<(), &'static str> {
+        self.cmd_tx
+            .send(NetworkCommand::StartReconnect {
+                invite_url,
+                user_id,
+                username,
+                role,
+            })
+            .await
+            .map_err(|_| "Network task not running")
+    }
+
+    /// Cancel any ongoing reconnect attempt
+    pub async fn cancel_reconnect(&self) {
+        let _ = self.cmd_tx.send(NetworkCommand::CancelReconnect).await;
+    }
+
     /// Get current network state
     pub async fn state(&self) -> NetworkState {
         self.state.read().await.network_state
@@ -174,6 +231,21 @@ impl NetworkManager {
     pub async fn invite_url(&self) -> Option<String> {
         self.state.read().await.invite_url.clone()
     }
+
+    /// Get connection info if connected
+    pub async fn connection_info(&self) -> Option<ConnectionInfo> {
+        let s = self.state.read().await;
+        if s.network_state == NetworkState::Connected || s.network_state == NetworkState::Hosting {
+            Some(ConnectionInfo {
+                hall_id: s.hall_id?,
+                invite_url: s.invite_url.clone()?,
+                host_addr: None,
+                epoch: s.epoch,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for NetworkManager {
@@ -181,6 +253,9 @@ impl Default for NetworkManager {
         Self::new()
     }
 }
+
+/// Backoff delays for reconnect: 1s, 2s, 5s, 10s, 30s (capped)
+const RECONNECT_DELAYS_MS: &[u64] = &[1000, 2000, 5000, 10000, 30000];
 
 /// Main network task
 async fn network_task(
@@ -203,6 +278,12 @@ async fn network_task(
                         token,
                         port,
                     }) => {
+                        // Cancel any reconnect
+                        {
+                            let mut s = state.write().await;
+                            s.cancel_reconnect = true;
+                            s.reconnecting = false;
+                        }
                         handle_start_hosting(
                             &state,
                             &event_tx,
@@ -221,6 +302,12 @@ async fn network_task(
                         username,
                         role,
                     }) => {
+                        // Cancel any reconnect
+                        {
+                            let mut s = state.write().await;
+                            s.cancel_reconnect = true;
+                            s.reconnecting = false;
+                        }
                         client = handle_connect(
                             &state,
                             &event_tx,
@@ -230,6 +317,29 @@ async fn network_task(
                             role,
                         )
                         .await;
+                    }
+                    Some(NetworkCommand::StartReconnect {
+                        invite_url,
+                        user_id,
+                        username,
+                        role,
+                    }) => {
+                        // Start reconnect loop
+                        client = handle_reconnect_loop(
+                            &state,
+                            &event_tx,
+                            invite_url,
+                            user_id,
+                            username,
+                            role,
+                        )
+                        .await;
+                    }
+                    Some(NetworkCommand::CancelReconnect) => {
+                        let mut s = state.write().await;
+                        s.cancel_reconnect = true;
+                        s.reconnecting = false;
+                        info!("Reconnect cancelled");
                     }
                     Some(NetworkCommand::SendChat(msg)) => {
                         // Send via server broadcast if hosting, or via client if connected
@@ -241,6 +351,12 @@ async fn network_task(
                         }
                     }
                     Some(NetworkCommand::Disconnect) => {
+                        // Cancel any reconnect
+                        {
+                            let mut s = state.write().await;
+                            s.cancel_reconnect = true;
+                            s.reconnecting = false;
+                        }
                         handle_disconnect(&state, &event_tx, &mut client).await;
                     }
                     None => {
@@ -267,6 +383,137 @@ async fn network_task(
                     client = None;
                 }
             }
+        }
+    }
+}
+
+/// Handle reconnect with exponential backoff
+async fn handle_reconnect_loop(
+    state: &Arc<RwLock<NetworkManagerState>>,
+    event_tx: &mpsc::Sender<NetworkEvent>,
+    invite_url: String,
+    user_id: Uuid,
+    username: String,
+    role: NetRole,
+) -> Option<Client> {
+    // Set reconnecting state
+    {
+        let mut s = state.write().await;
+        s.reconnecting = true;
+        s.cancel_reconnect = false;
+        s.network_state = NetworkState::Reconnecting;
+    }
+    let _ = event_tx
+        .send(NetworkEvent::StateChanged(NetworkState::Reconnecting))
+        .await;
+
+    let mut attempt = 0;
+    loop {
+        // Check if cancelled
+        {
+            let s = state.read().await;
+            if s.cancel_reconnect {
+                info!("Reconnect loop cancelled");
+                return None;
+            }
+        }
+
+        info!(attempt = attempt + 1, "Reconnect attempt");
+
+        // Try to connect
+        if let Some(client) =
+            try_connect(state, event_tx, &invite_url, user_id, &username, role).await
+        {
+            // Success!
+            {
+                let mut s = state.write().await;
+                s.reconnecting = false;
+                s.epoch += 1;
+            }
+            info!("Reconnect successful");
+            return Some(client);
+        }
+
+        // Check if cancelled after attempt
+        {
+            let s = state.read().await;
+            if s.cancel_reconnect {
+                info!("Reconnect loop cancelled after attempt");
+                return None;
+            }
+        }
+
+        // Calculate backoff delay
+        let delay_idx = attempt.min(RECONNECT_DELAYS_MS.len() - 1);
+        let delay_ms = RECONNECT_DELAYS_MS[delay_idx];
+        info!(delay_ms = delay_ms, "Reconnect backoff");
+
+        // Wait with potential cancel check
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+
+        attempt += 1;
+    }
+}
+
+/// Try a single connection attempt (no state changes on failure beyond logging)
+async fn try_connect(
+    state: &Arc<RwLock<NetworkManagerState>>,
+    event_tx: &mpsc::Sender<NetworkEvent>,
+    invite_url: &str,
+    user_id: Uuid,
+    username: &str,
+    role: NetRole,
+) -> Option<Client> {
+    // Parse invite URL
+    let invite = match InviteUrl::parse(invite_url) {
+        Ok(inv) => inv,
+        Err(e) => {
+            warn!(error = %e, "Invalid invite URL during reconnect");
+            return None;
+        }
+    };
+
+    // Connect
+    match Client::connect(
+        invite.socket_addr(),
+        user_id,
+        username.to_string(),
+        invite.hall_id,
+        invite.token.clone(),
+        role,
+    )
+    .await
+    {
+        Ok(client) => {
+            info!("Connected to server");
+            {
+                let mut s = state.write().await;
+                s.network_state = NetworkState::Connected;
+                s.hall_id = Some(invite.hall_id);
+                s.user_id = Some(user_id);
+                s.user_role = Some(role);
+                s.username = Some(username.to_string());
+                s.invite_url = Some(invite_url.to_string());
+            }
+            let _ = event_tx
+                .send(NetworkEvent::StateChanged(NetworkState::Connected))
+                .await;
+
+            // Emit connection info for persistence
+            let _ = event_tx
+                .send(NetworkEvent::Connected(ConnectionInfo {
+                    hall_id: invite.hall_id,
+                    invite_url: invite_url.to_string(),
+                    host_addr: Some(invite.socket_addr().to_string()),
+                    epoch: state.read().await.epoch,
+                }))
+                .await;
+
+            Some(client)
+        }
+        Err(e) => {
+            debug!(error = %e, "Connection attempt failed");
+            None
         }
     }
 }
@@ -370,25 +617,40 @@ async fn handle_connect(
     match Client::connect(
         invite.socket_addr(),
         user_id,
-        username,
+        username.clone(),
         invite.hall_id,
-        invite.token,
+        invite.token.clone(),
         role,
     )
     .await
     {
         Ok(client) => {
             info!("Connected to server");
-            {
+            let epoch = {
                 let mut s = state.write().await;
                 s.network_state = NetworkState::Connected;
                 s.hall_id = Some(invite.hall_id);
                 s.user_id = Some(user_id);
                 s.user_role = Some(role);
-            }
+                s.username = Some(username);
+                s.invite_url = Some(invite_url.clone());
+                s.epoch += 1;
+                s.epoch
+            };
             let _ = event_tx
                 .send(NetworkEvent::StateChanged(NetworkState::Connected))
                 .await;
+
+            // Emit connection info for persistence
+            let _ = event_tx
+                .send(NetworkEvent::Connected(ConnectionInfo {
+                    hall_id: invite.hall_id,
+                    invite_url,
+                    host_addr: Some(invite.socket_addr().to_string()),
+                    epoch,
+                }))
+                .await;
+
             Some(client)
         }
         Err(e) => {

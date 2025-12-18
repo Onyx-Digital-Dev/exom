@@ -23,5 +23,8 @@ pub fn setup_bindings(
     halls::setup_hall_bindings(window, state.clone(), network_manager.clone());
     chat::setup_chat_bindings(window, state.clone(), network_manager.clone());
     members::setup_member_bindings(window, state.clone());
-    network::setup_network_bindings(window, state.clone(), network_manager);
+    network::setup_network_bindings(window, state.clone(), network_manager.clone());
+
+    // Attempt auto-reconnect after session is restored (if user is logged in)
+    network::try_auto_reconnect(state, network_manager);
 }
