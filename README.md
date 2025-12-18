@@ -1,6 +1,6 @@
 # Exom
 
-Hall-based collaboration platform built with Rust and Slint.
+Hall-based collaboration platform built with Rust and Slint. Exom is a local-first collaboration hall where presence, delivery, and trust are explicit.
 
 ## Overview
 

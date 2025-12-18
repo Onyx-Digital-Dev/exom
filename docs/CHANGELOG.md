@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1 – Social Trust Baseline
+
+- Deterministic peer networking with host election + failover
+- Message delivery confirmation (pending → confirmed)
+- Typing indicators with throttle and pruning
+- Reconnect reconciliation for pending messages
+- Explicit presence and human-readable connection states
+
 ## Phase F: Always-On Halls
 
 ### F1: Persist Last Hall + Auto-Reconnect
