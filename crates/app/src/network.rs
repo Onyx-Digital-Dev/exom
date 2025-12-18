@@ -52,6 +52,10 @@ pub enum NetworkEvent {
     HostChanged { new_host_id: Uuid },
     /// Successfully connected - persist this info
     Connected(ConnectionInfo),
+    /// Election in progress (status update)
+    ElectionInProgress,
+    /// This node became the new host
+    BecameHost { port: u16 },
 }
 
 /// Network manager handle
@@ -77,6 +81,10 @@ struct NetworkManagerState {
     reconnecting: bool,
     /// Cancel signal for reconnect loop
     cancel_reconnect: bool,
+    /// Token for hosting (stored from invite URL)
+    token: Option<String>,
+    /// Last known member list (for election)
+    members: Vec<PeerInfo>,
 }
 
 enum NetworkCommand {
@@ -125,6 +133,8 @@ impl NetworkManager {
             epoch: 0,
             reconnecting: false,
             cancel_reconnect: false,
+            token: None,
+            members: Vec::new(),
         }));
 
         // Spawn the network task
@@ -494,6 +504,7 @@ async fn try_connect(
                 s.user_role = Some(role);
                 s.username = Some(username.to_string());
                 s.invite_url = Some(invite_url.to_string());
+                s.token = Some(invite.token.clone());
             }
             let _ = event_tx
                 .send(NetworkEvent::StateChanged(NetworkState::Connected))
@@ -634,6 +645,7 @@ async fn handle_connect(
                 s.user_role = Some(role);
                 s.username = Some(username);
                 s.invite_url = Some(invite_url.clone());
+                s.token = Some(invite.token.clone());
                 s.epoch += 1;
                 s.epoch
             };
@@ -706,11 +718,17 @@ async fn handle_client_event(
     event: ServerEvent,
 ) {
     match event {
-        ServerEvent::Joined { host_id, members } => {
-            debug!(host_id = %host_id, members = members.len(), "Joined hall");
+        ServerEvent::Joined {
+            host_id,
+            members,
+            epoch,
+        } => {
+            debug!(host_id = %host_id, members = members.len(), epoch = epoch, "Joined hall");
             {
                 let mut s = state.write().await;
                 s.host_id = Some(host_id);
+                s.epoch = epoch;
+                s.members = members.clone();
             }
             let _ = event_tx.send(NetworkEvent::MembersUpdated(members)).await;
         }
@@ -727,6 +745,10 @@ async fn handle_client_event(
             let _ = event_tx.send(NetworkEvent::ChatReceived(msg)).await;
         }
         ServerEvent::MemberListUpdated { members } => {
+            {
+                let mut s = state.write().await;
+                s.members = members.clone();
+            }
             let _ = event_tx.send(NetworkEvent::MembersUpdated(members)).await;
         }
         ServerEvent::PeerLeft { user_id } => {
@@ -773,7 +795,164 @@ async fn handle_client_event(
                 .send(NetworkEvent::StateChanged(NetworkState::Offline))
                 .await;
         }
+        ServerEvent::HostDead {
+            hall_id,
+            last_epoch,
+            members,
+        } => {
+            info!(hall_id = %hall_id, last_epoch = last_epoch, "Host dead - starting election");
+            let _ = event_tx.send(NetworkEvent::ElectionInProgress).await;
+
+            // Perform deterministic election
+            let (user_id, user_role, username, token) = {
+                let s = state.read().await;
+                (s.user_id, s.user_role, s.username.clone(), s.token.clone())
+            };
+
+            if let (Some(user_id), Some(user_role), Some(username)) = (user_id, user_role, username)
+            {
+                // Determine election winner
+                let winner = elect_new_host(&members, user_id, user_role);
+
+                if winner == user_id {
+                    info!("This node won election - becoming host");
+
+                    // Try to start server
+                    let token = token.unwrap_or_else(|| "failover".to_string());
+                    match try_start_server(hall_id, user_id, username, user_role, token, last_epoch)
+                        .await
+                    {
+                        Some((server, port)) => {
+                            {
+                                let mut s = state.write().await;
+                                s.server = Some(server);
+                                s.network_state = NetworkState::Hosting;
+                                s.host_id = Some(user_id);
+                                s.epoch = last_epoch + 1;
+                            }
+                            let _ = event_tx.send(NetworkEvent::BecameHost { port }).await;
+                            let _ = event_tx
+                                .send(NetworkEvent::StateChanged(NetworkState::Hosting))
+                                .await;
+                        }
+                        None => {
+                            error!("Failed to start server after winning election");
+                            let _ = event_tx.send(NetworkEvent::Disconnected).await;
+                        }
+                    }
+                } else {
+                    info!(winner = %winner, "Another node won election - waiting for reconnect info");
+                    // Will receive HostElected event with new host address
+                }
+            }
+        }
+        ServerEvent::HostElected {
+            hall_id,
+            epoch,
+            host_user_id,
+            host_addr,
+            host_port,
+        } => {
+            info!(
+                hall_id = %hall_id,
+                epoch = epoch,
+                host = %host_user_id,
+                addr = %host_addr,
+                port = host_port,
+                "New host elected - reconnecting"
+            );
+
+            // Update epoch
+            {
+                let mut s = state.write().await;
+                if epoch > s.epoch {
+                    s.epoch = epoch;
+                }
+            }
+
+            // TODO: Auto-reconnect to new host
+            // For now, just update the state and let the user reconnect
+            let _ = event_tx.send(NetworkEvent::Disconnected).await;
+        }
     }
+}
+
+/// Elect new host deterministically from members list
+/// Returns the user_id of the winner
+fn elect_new_host(members: &[PeerInfo], my_user_id: Uuid, my_role: NetRole) -> Uuid {
+    // Build candidate list (excluding current host who is dead)
+    let mut candidates: Vec<(Uuid, NetRole)> = members
+        .iter()
+        .filter(|m| !m.is_host) // Exclude dead host
+        .map(|m| (m.user_id, m.role))
+        .collect();
+
+    // Add self if not in members
+    if !candidates.iter().any(|(id, _)| *id == my_user_id) {
+        candidates.push((my_user_id, my_role));
+    }
+
+    // Sort by: 1) role descending (higher role wins), 2) user_id ascending (tie-breaker)
+    candidates.sort_by(|a, b| {
+        // First compare by role (descending - higher role wins)
+        match b.1.cmp(&a.1) {
+            std::cmp::Ordering::Equal => {
+                // Tie-breaker: ascending by user_id
+                a.0.to_string().cmp(&b.0.to_string())
+            }
+            other => other,
+        }
+    });
+
+    // Filter to only candidates who can host (Agent or higher)
+    let hostable: Vec<_> = candidates
+        .iter()
+        .filter(|(_, role)| role.can_host())
+        .collect();
+
+    if let Some((winner_id, _)) = hostable.first() {
+        *winner_id
+    } else {
+        // No one can host - return first candidate anyway
+        candidates.first().map(|(id, _)| *id).unwrap_or(my_user_id)
+    }
+}
+
+/// Try to start a server on port 7331, incrementing if busy (up to +20)
+async fn try_start_server(
+    hall_id: Uuid,
+    host_id: Uuid,
+    username: String,
+    role: NetRole,
+    token: String,
+    _last_epoch: u64,
+) -> Option<(Server, u16)> {
+    let base_port = 7331;
+    let max_attempts = 20;
+
+    for offset in 0..max_attempts {
+        let port = base_port + offset;
+        match Server::start(
+            port,
+            hall_id,
+            host_id,
+            username.clone(),
+            role,
+            token.clone(),
+        )
+        .await
+        {
+            Ok(server) => {
+                info!(port = port, "Server started after election");
+                return Some((server, port));
+            }
+            Err(e) => {
+                debug!(port = port, error = %e, "Port busy, trying next");
+            }
+        }
+    }
+
+    None
 }
 
 async fn handle_client_disconnected(

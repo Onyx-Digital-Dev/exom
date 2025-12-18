@@ -17,8 +17,13 @@ use crate::error::{Error, Result};
 use crate::frame::{read_frame, write_frame};
 use crate::protocol::{Message, NetRole, PeerInfo};
 
+use chrono::Utc;
+
 /// Maximum number of connected peers
 const MAX_PEERS: usize = 32;
+
+/// Heartbeat interval in milliseconds
+const HEARTBEAT_INTERVAL_MS: u64 = 2000;
 
 /// Connected peer state
 struct Peer {
@@ -34,6 +39,7 @@ struct ServerState {
     host_id: Uuid,
     token: String,
     peers: HashMap<Uuid, Peer>,
+    epoch: u64,
 }
 
 impl ServerState {
@@ -93,6 +99,7 @@ impl Server {
             host_id,
             token,
             peers,
+            epoch: 1,
         }));
 
         // Spawn accept loop
@@ -100,11 +107,21 @@ impl Server {
         let shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(accept_loop(listener, state_clone, shutdown_rx));
 
+        // Spawn heartbeat task
+        let state_clone = state.clone();
+        let shutdown_rx = shutdown_tx.subscribe();
+        tokio::spawn(heartbeat_task(state_clone, shutdown_rx));
+
         Ok(Server {
             addr: bound_addr,
             state,
             shutdown_tx,
         })
+    }
+
+    /// Get current epoch
+    pub async fn epoch(&self) -> u64 {
+        self.state.read().await.epoch
     }
 
     /// Get the server's bound address
@@ -344,6 +361,35 @@ async fn broadcast_to_peers(state: &Arc<RwLock<ServerState>>, msg: Message, exce
     for peer in s.peers.values() {
         if except.map_or(true, |ex| peer.user_id != ex) {
             let _ = peer.tx.send(msg.clone()).await;
+        }
+    }
+}
+
+/// Heartbeat task - sends heartbeats to all peers every 2s
+async fn heartbeat_task(state: Arc<RwLock<ServerState>>, mut shutdown_rx: broadcast::Receiver<()>) {
+    let interval = std::time::Duration::from_millis(HEARTBEAT_INTERVAL_MS);
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {
+                let (hall_id, host_id, epoch) = {
+                    let s = state.read().await;
+                    (s.hall_id, s.host_id, s.epoch)
+                };
+
+                let heartbeat = Message::HostHeartbeat {
+                    hall_id,
+                    epoch,
+                    host_user_id: host_id,
+                    timestamp: Utc::now(),
+                };
+
+                broadcast_to_peers(&state, heartbeat, None).await;
+            }
+            _ = shutdown_rx.recv() => {
+                debug!("Heartbeat task shutting down");
+                break;
+            }
         }
     }
 }

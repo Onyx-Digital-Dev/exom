@@ -82,6 +82,7 @@ pub enum Message {
         hall_id: Uuid,
         host_id: Uuid,
         members: Vec<PeerInfo>,
+        epoch: u64,
     },
 
     /// Server rejects join request
@@ -107,6 +108,26 @@ pub enum Message {
 
     /// Server is shutting down
     ServerShutdown,
+
+    /// Host heartbeat (sent every 2s)
+    HostHeartbeat {
+        hall_id: Uuid,
+        epoch: u64,
+        host_user_id: Uuid,
+        timestamp: DateTime<Utc>,
+    },
+
+    /// Election has started (host may be dead)
+    HostElectionStarted { hall_id: Uuid, epoch: u64 },
+
+    /// New host elected
+    HostElected {
+        hall_id: Uuid,
+        epoch: u64,
+        host_user_id: Uuid,
+        host_addr: String,
+        host_port: u16,
+    },
 }
 
 impl Message {

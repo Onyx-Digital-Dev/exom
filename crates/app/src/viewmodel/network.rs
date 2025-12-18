@@ -141,6 +141,13 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             // Persist connection info for auto-reconnect
             persist_connection(state, &conn_info);
         }
+        NetworkEvent::ElectionInProgress => {
+            window.set_network_status("Election in progress...".into());
+        }
+        NetworkEvent::BecameHost { port } => {
+            tracing::info!(port = port, "This node became host after election");
+            window.set_network_status(format!("Hosting (port {})", port).into());
+        }
     }
 }
 
