@@ -83,10 +83,10 @@ export component ChatPanel inherits Rectangle {
                 padding: Theme.pad-md;
                 spacing: 0;
 
-                // Empty state when no messages
+                // Empty state when no messages - encourage first message
                 if root.messages.length == 0: EmptyState {
-                    title: "No Messages";
-                    description: "Start the conversation by sending a message.";
+                    title: "Welcome to " + root.hall-name;
+                    description: "Say hello to start the conversation.";
                     vertical-stretch: 1;
                 }
 
@@ -249,7 +249,7 @@ export component EmptyChatPanel inherits Rectangle {
         spacing: Theme.pad-sm;
 
         Text {
-            text: "No Hall Selected";
+            text: "Select a Hall";
             color: Theme.color-text-muted;
             font-size: Theme.text-lg;
             horizontal-alignment: center;

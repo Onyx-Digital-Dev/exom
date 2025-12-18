@@ -110,11 +110,27 @@ export component MembersPanel inherits Rectangle {
                     padding: Theme.pad-sm;
                     spacing: 2px;
 
-                    // Empty state when no members
-                    if root.members.length == 0: EmptyState {
-                        title: "No Members";
-                        description: "Members will appear here when they join.";
+                    // Guidance when alone in the hall
+                    if root.members.length <= 1: VerticalLayout {
                         vertical-stretch: 1;
+                        alignment: center;
+                        spacing: Theme.pad-sm;
+                        padding: Theme.pad-md;
+
+                        Text {
+                            text: root.members.length == 0 ? "No Members" : "Just You";
+                            color: Theme.color-text-muted;
+                            font-size: Theme.text-md;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: root.invite-url != "" ? "Share the invite link below to bring others in." : "Go online to invite others.";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-sm;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
                     }
 
                     for member in root.members: Rectangle {

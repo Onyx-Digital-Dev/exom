@@ -54,10 +54,10 @@ export component HallsPanel inherits Rectangle {
                 padding: Theme.pad-sm;
                 spacing: 2px;
 
-                // Empty state when no halls
+                // Welcome state when no halls
                 if root.halls.length == 0: EmptyState {
-                    title: "No Halls";
-                    description: "Create a hall or join one with an invite code.";
+                    title: "Welcome";
+                    description: "Create your first hall below, or paste an invite link to join one.";
                     height: 120px;
                 }
 
