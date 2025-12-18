@@ -178,7 +178,7 @@ export component DangerButton inherits Rectangle {
 
     callback clicked();
 
-    background: touch.has-hover && root.enabled ? #3d2020 : Theme.color-panel;
+    background: touch.has-hover && root.enabled ? Theme.color-error-muted : Theme.color-panel;
     border-color: Theme.color-error;
     border-width: Theme.border-width;
     border-radius: Theme.radius-sm;
@@ -286,7 +286,7 @@ export component ModalShell inherits Rectangle {
 
     callback close-requested();
 
-    background: root.show ? #00000080 : transparent;
+    background: root.show ? Theme.color-overlay : transparent;
 
     Rectangle {
         width: 100%;

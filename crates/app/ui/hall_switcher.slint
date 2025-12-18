@@ -18,7 +18,7 @@ export component HallSwitcher inherits Rectangle {
     callback close-requested();
 
     // Full screen overlay
-    background: root.show ? #00000080 : transparent;
+    background: root.show ? Theme.color-overlay : transparent;
     visible: root.show;
 
     // Backdrop click to close
