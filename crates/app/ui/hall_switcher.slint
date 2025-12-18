@@ -184,9 +184,10 @@ export component HallSwitcher inherits Rectangle {
 
     // Focus the search input when shown
     public function focus-search() {
-        search-input.set-focus();
-        scope.focus();
+        // Reset state first
         root.selected-index = 0;
         root.search-text = "";
+        // Focus search input for text entry
+        search-input.set-focus();
     }
 }
