@@ -146,6 +146,7 @@ pub fn setup_chat_bindings(
                         sender_role: NetRole::from_value(role_value),
                         content,
                         timestamp,
+                        sequence: 0, // Assigned by host
                     };
                     let _ = nm.send_chat(net_msg).await;
                 }

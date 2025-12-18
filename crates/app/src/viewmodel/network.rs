@@ -148,6 +148,23 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             tracing::info!(port = port, "This node became host after election");
             window.set_network_status(format!("Hosting (port {})", port).into());
         }
+        NetworkEvent::SyncBatchReceived { messages } => {
+            // Store all synced messages (deduplication via INSERT OR IGNORE)
+            let current_hall = state.current_hall_id();
+            if let Some(hall_id) = current_hall {
+                let mut stored = 0;
+                for net_msg in messages {
+                    if net_msg.hall_id == hall_id {
+                        store_network_message(state, &net_msg);
+                        stored += 1;
+                    }
+                }
+                if stored > 0 {
+                    tracing::debug!(count = stored, "Synced messages from batch");
+                    window.invoke_load_messages();
+                }
+            }
+        }
     }
 }
 

@@ -62,6 +62,9 @@ pub struct NetMessage {
     pub sender_role: NetRole,
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    /// Sequence number assigned by host for ordering
+    #[serde(default)]
+    pub sequence: u64,
 }
 
 /// Network protocol messages
@@ -128,6 +131,16 @@ pub enum Message {
         host_addr: String,
         host_port: u16,
     },
+
+    /// Request messages since a sequence number (for sync on reconnect)
+    SyncSince { hall_id: Uuid, last_sequence: u64 },
+
+    /// Batch of messages in response to SyncSince
+    SyncBatch {
+        hall_id: Uuid,
+        from_sequence: u64,
+        messages: Vec<NetMessage>,
+    },
 }
 
 impl Message {
@@ -156,6 +169,7 @@ mod tests {
             sender_role: NetRole::Agent,
             content: "Hello".to_string(),
             timestamp: Utc::now(),
+            sequence: 0,
         });
 
         let bytes = msg.to_bytes().unwrap();

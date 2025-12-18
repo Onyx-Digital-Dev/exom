@@ -62,6 +62,12 @@ pub enum ServerEvent {
         host_addr: String,
         host_port: u16,
     },
+    /// Batch of messages received after sync request
+    SyncBatch {
+        hall_id: Uuid,
+        from_sequence: u64,
+        messages: Vec<crate::protocol::NetMessage>,
+    },
 }
 
 /// Client handle for network operations
@@ -427,6 +433,25 @@ async fn handle_server_message(
                     host_user_id,
                     host_addr,
                     host_port,
+                })
+                .await;
+        }
+        Message::SyncBatch {
+            hall_id,
+            from_sequence,
+            messages,
+        } => {
+            debug!(
+                hall_id = %hall_id,
+                from_sequence = from_sequence,
+                count = messages.len(),
+                "Received sync batch"
+            );
+            let _ = event_tx
+                .send(ServerEvent::SyncBatch {
+                    hall_id,
+                    from_sequence,
+                    messages,
                 })
                 .await;
         }

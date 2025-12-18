@@ -19,11 +19,16 @@ use crate::protocol::{Message, NetRole, PeerInfo};
 
 use chrono::Utc;
 
+use crate::protocol::NetMessage;
+
 /// Maximum number of connected peers
 const MAX_PEERS: usize = 32;
 
 /// Heartbeat interval in milliseconds
 const HEARTBEAT_INTERVAL_MS: u64 = 2000;
+
+/// Maximum messages to keep in history for sync
+const MAX_MESSAGE_HISTORY: usize = 500;
 
 /// Connected peer state
 struct Peer {
@@ -40,6 +45,10 @@ struct ServerState {
     token: String,
     peers: HashMap<Uuid, Peer>,
     epoch: u64,
+    /// Next sequence number for messages
+    next_sequence: u64,
+    /// Recent message history for sync (circular buffer)
+    message_history: Vec<NetMessage>,
 }
 
 impl ServerState {
@@ -100,6 +109,8 @@ impl Server {
             token,
             peers,
             epoch: 1,
+            next_sequence: 1,
+            message_history: Vec::new(),
         }));
 
         // Spawn accept loop
@@ -325,7 +336,24 @@ async fn writer_task(mut writer: WriteHalf<TcpStream>, mut rx: mpsc::Receiver<Me
 /// Handle an incoming message
 async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<ServerState>>) {
     match msg {
-        Message::Chat(chat_msg) => {
+        Message::Chat(mut chat_msg) => {
+            // Assign sequence number and store in history
+            let sequence = {
+                let mut s = state.write().await;
+                let seq = s.next_sequence;
+                s.next_sequence += 1;
+                chat_msg.sequence = seq;
+
+                // Store in history (circular buffer)
+                if s.message_history.len() >= MAX_MESSAGE_HISTORY {
+                    s.message_history.remove(0);
+                }
+                s.message_history.push(chat_msg.clone());
+
+                seq
+            };
+            debug!(sequence = sequence, "Assigned sequence to message");
+
             // Broadcast to all peers including sender
             broadcast_to_peers(state, Message::Chat(chat_msg), None).await;
         }
@@ -334,6 +362,39 @@ async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<Server
             let s = state.read().await;
             if let Some(peer) = s.peers.get(&sender_id) {
                 let _ = peer.tx.send(Message::Pong).await;
+            }
+        }
+        Message::SyncSince {
+            hall_id,
+            last_sequence,
+        } => {
+            // Find messages after last_sequence and send them
+            let (messages, from_sequence) = {
+                let s = state.read().await;
+                if hall_id != s.hall_id {
+                    return;
+                }
+                let messages: Vec<NetMessage> = s
+                    .message_history
+                    .iter()
+                    .filter(|m| m.sequence > last_sequence)
+                    .cloned()
+                    .collect();
+                let from_seq = messages.first().map(|m| m.sequence).unwrap_or(last_sequence);
+                (messages, from_seq)
+            };
+
+            // Send sync batch to requester
+            let s = state.read().await;
+            if let Some(peer) = s.peers.get(&sender_id) {
+                let _ = peer
+                    .tx
+                    .send(Message::SyncBatch {
+                        hall_id,
+                        from_sequence,
+                        messages,
+                    })
+                    .await;
             }
         }
         _ => {

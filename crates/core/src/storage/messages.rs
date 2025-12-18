@@ -18,11 +18,11 @@ impl<'a> MessageStore<'a> {
         Self { conn }
     }
 
-    /// Create a new message
+    /// Create a new message (dedupes by ID - ignores if already exists)
     #[instrument(skip(self, message), fields(hall_id = %message.hall_id, sender_id = %message.sender_id))]
     pub fn create(&self, message: &Message) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO messages (id, hall_id, sender_id, content, created_at, edited_at, is_deleted)
+            "INSERT OR IGNORE INTO messages (id, hall_id, sender_id, content, created_at, edited_at, is_deleted)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 message.id.to_string(),

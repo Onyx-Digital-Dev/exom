@@ -56,6 +56,8 @@ pub enum NetworkEvent {
     ElectionInProgress,
     /// This node became the new host
     BecameHost { port: u16 },
+    /// Received batch of messages for sync
+    SyncBatchReceived { messages: Vec<NetMessage> },
 }
 
 /// Network manager handle
@@ -873,6 +875,20 @@ async fn handle_client_event(
             // TODO: Auto-reconnect to new host
             // For now, just update the state and let the user reconnect
             let _ = event_tx.send(NetworkEvent::Disconnected).await;
+        }
+        ServerEvent::SyncBatch {
+            hall_id: _,
+            from_sequence,
+            messages,
+        } => {
+            debug!(
+                from_sequence = from_sequence,
+                count = messages.len(),
+                "Received sync batch"
+            );
+            let _ = event_tx
+                .send(NetworkEvent::SyncBatchReceived { messages })
+                .await;
         }
     }
 }
