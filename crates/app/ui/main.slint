@@ -73,37 +73,18 @@ export component MainWindow inherits Window {
     // Chest callbacks
     callback load-chest-files();
 
-    // Global keyboard handling (OSV-first: Alt/Ctrl/Shift/Esc only)
-    global-keys := FocusScope {
-        enabled: root.is-logged-in;
-
-        key-pressed(event) => {
-            // Alt+X: Open hall switcher
-            if event.modifiers.alt && event.text == "x" {
-                root.show-switcher = true;
-                hall-switcher.focus-search();
-                return accept;
-            }
-            // Esc: Close any open modal
-            if event.text == Key.Escape {
-                if root.show-switcher {
-                    root.show-switcher = false;
-                    return accept;
-                }
-            }
-            return reject;
-        }
-    }
-
-    // Auth view
-    if !root.is-logged-in: AuthView {
+    // Auth view (visible when not logged in)
+    AuthView {
+        visible: !root.is-logged-in;
         error-text: root.auth-error;
         login(u, p) => { root.login(u, p); }
         register(u, p) => { root.register(u, p); }
     }
 
-    // Main app view
-    if root.is-logged-in: VerticalLayout {
+    // Main app view (visible when logged in)
+    VerticalLayout {
+        visible: root.is-logged-in;
+
         // Top bar
         Rectangle {
             height: 36px;
@@ -148,16 +129,21 @@ export component MainWindow inherits Window {
                 halls: root.halls;
                 current-hall-id: root.current-hall-id;
                 error-text: root.hall-error;
-                select-hall(id) => { root.select-hall(id); }
+                select-hall(id) => {
+                    root.select-hall(id);
+                    // Focus chat input after selecting hall
+                    chat-panel.focus-input();
+                }
                 create-hall(name) => { root.create-hall(name); }
                 join-with-invite(token) => { root.join-with-invite(token); }
             }
 
             VerticalSeparator {}
 
-            // Center panel - Chat
-            if root.current-hall-id != "": ChatPanel {
+            // Center panel - Chat (always present for focus management)
+            chat-panel := ChatPanel {
                 horizontal-stretch: 1;
+                visible: root.current-hall-id != "";
                 hall-name: root.current-hall-name;
                 host-name: root.current-host-name;
                 user-role: root.current-user-role;
@@ -166,19 +152,21 @@ export component MainWindow inherits Window {
                 delete-message(id) => { root.delete-message(id); }
             }
 
-            if root.current-hall-id == "": EmptyChatPanel {
+            EmptyChatPanel {
                 horizontal-stretch: 1;
+                visible: root.current-hall-id == "";
             }
 
             VerticalSeparator {}
 
-            // Right panel - Members
-            if root.current-hall-id != "": MembersPanel {
+            // Right panel - Members (always present, visibility controlled)
+            MembersPanel {
+                visible: root.current-hall-id != "";
                 members: root.members;
                 chest-files: root.chest-files;
                 chest-path: root.chest-path;
                 chest-status: root.chest-status;
-                current-user-id: "";  // Will be set by binding
+                current-user-id: "";
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }
@@ -186,30 +174,52 @@ export component MainWindow inherits Window {
             }
 
             // Empty right panel placeholder
-            if root.current-hall-id == "": Rectangle {
+            Rectangle {
+                visible: root.current-hall-id == "";
                 width: Theme.right-panel-width;
                 background: Theme.color-panel;
-
-                Text {
-                    text: "";
-                    color: Theme.color-text-dim;
-                    font-size: Theme.text-sm;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
             }
         }
-    }
 
-    // Hall quick switcher overlay (Alt+X)
-    hall-switcher := HallSwitcher {
-        halls: root.switcher-halls;
-        show: root.show-switcher;
-        select-hall(id) => {
-            root.select-hall(id);
+        // Global keyboard handling (OSV-first: Alt/Ctrl/Shift/Esc only)
+        FocusScope {
+            key-pressed(event) => {
+                // Alt+X: Open hall switcher
+                if event.modifiers.alt && event.text == "x" {
+                    root.show-switcher = true;
+                    hall-switcher.focus-search();
+                    return accept;
+                }
+                // Esc: Close any open modal and return focus to chat
+                if event.text == Key.Escape {
+                    if root.show-switcher {
+                        root.show-switcher = false;
+                        if root.current-hall-id != "" {
+                            chat-panel.focus-input();
+                        }
+                        return accept;
+                    }
+                }
+                return reject;
+            }
         }
-        close-requested => {
-            root.show-switcher = false;
+
+        // Hall quick switcher overlay (Alt+X)
+        hall-switcher := HallSwitcher {
+            halls: root.switcher-halls;
+            show: root.show-switcher;
+            select-hall(id) => {
+                root.select-hall(id);
+                // Focus chat input after selecting hall
+                chat-panel.focus-input();
+            }
+            close-requested => {
+                root.show-switcher = false;
+                // Return focus to chat if hall is open
+                if root.current-hall-id != "" {
+                    chat-panel.focus-input();
+                }
+            }
         }
     }
 
