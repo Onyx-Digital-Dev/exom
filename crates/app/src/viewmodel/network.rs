@@ -10,7 +10,7 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 use tokio::sync::Mutex;
 
 use crate::network::{ConnectionInfo, NetworkEvent, NetworkManager, NetworkState};
-use crate::state::AppState;
+use crate::state::{AppState, TrackedMember};
 use crate::MainWindow;
 use crate::MemberItem;
 
@@ -145,13 +145,46 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             }
         }
         NetworkEvent::MembersUpdated(members) => {
+            // Detect who joined and left
+            let tracked: Vec<TrackedMember> = members
+                .iter()
+                .map(|m| TrackedMember {
+                    user_id: m.user_id,
+                    username: m.username.clone(),
+                })
+                .collect();
+            let (joined, left) = state.update_known_members(tracked);
+            let has_changes = !joined.is_empty() || !left.is_empty();
+
+            // Add system messages for joins/leaves
+            if let Some(hall_id) = state.current_hall_id() {
+                for name in joined {
+                    state.add_system_message(hall_id, format!("{} joined the hall", name));
+                }
+                for name in left {
+                    state.add_system_message(hall_id, format!("{} left the hall", name));
+                }
+            }
+
             // Update the members list from network peers
             update_network_members(window, state, &members);
+
+            // Refresh messages to show system messages
+            if has_changes {
+                window.invoke_load_messages();
+            }
         }
         NetworkEvent::ConnectionFailed(reason) => {
             window.set_network_status(format!("Error: {}", reason).into());
         }
         NetworkEvent::Disconnected => {
+            // Add system message
+            if let Some(hall_id) = state.current_hall_id() {
+                state.add_system_message(hall_id, "Connection lost".to_string());
+                window.invoke_load_messages();
+            }
+            // Clear known members on disconnect
+            state.clear_known_members();
             window.set_network_status("Disconnected".into());
             // Reload members from local database
             window.invoke_load_members();
@@ -171,6 +204,21 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
         NetworkEvent::HostChanged { new_host_id } => {
             // Host changed - update UI
             tracing::info!(new_host_id = %new_host_id, "Host changed");
+
+            // Add system message with host name
+            if let Some(hall_id) = state.current_hall_id() {
+                // Try to get host name from known members or database
+                let host_name = {
+                    let known = state.known_members.lock().unwrap();
+                    known
+                        .iter()
+                        .find(|m| m.user_id == new_host_id)
+                        .map(|m| m.username.clone())
+                };
+                let name = host_name.unwrap_or_else(|| "someone".to_string());
+                state.add_system_message(hall_id, format!("Host changed to {}", name));
+                window.invoke_load_messages();
+            }
             // The members list will be updated via MembersUpdated event
         }
         NetworkEvent::Connected(conn_info) => {
@@ -182,6 +230,11 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
         }
         NetworkEvent::BecameHost { port } => {
             tracing::info!(port = port, "This node became host after election");
+            // Add system message
+            if let Some(hall_id) = state.current_hall_id() {
+                state.add_system_message(hall_id, "You are now the host".to_string());
+                window.invoke_load_messages();
+            }
             window.set_network_status(format!("Hosting (port {})", port).into());
         }
         NetworkEvent::SyncBatchReceived { messages } => {

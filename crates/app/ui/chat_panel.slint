@@ -13,6 +13,7 @@ export struct MessageItem {
     is-edited: bool,
     is-group-start: bool,  // True if first message in a group from same sender
     is-host: bool,         // True if sender is current host
+    is-system: bool,       // True for system messages (join/leave/host change)
 }
 
 export component ChatPanel inherits Rectangle {
@@ -91,10 +92,26 @@ export component ChatPanel inherits Rectangle {
 
                 for msg in root.messages: Rectangle {
                     background: transparent;
-                    // More space before group start, compact spacing within group
-                    height: msg.is-group-start ? self.preferred-height + Theme.pad-md : self.preferred-height + 2px;
+                    // System messages get less vertical space
+                    height: msg.is-system ? self.preferred-height + Theme.pad-xs :
+                            (msg.is-group-start ? self.preferred-height + Theme.pad-md : self.preferred-height + 2px);
 
-                    VerticalLayout {
+                    // System message (join/leave/host change) - subtle centered text
+                    if msg.is-system: HorizontalLayout {
+                        alignment: center;
+                        padding-top: Theme.pad-xs;
+                        padding-bottom: Theme.pad-xs;
+
+                        Text {
+                            text: "— " + msg.content + " —";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-xs;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Regular message
+                    if !msg.is-system: VerticalLayout {
                         spacing: 2px;
                         padding-top: msg.is-group-start ? Theme.pad-sm : 0;
 
