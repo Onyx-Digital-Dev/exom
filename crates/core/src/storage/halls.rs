@@ -235,4 +235,54 @@ impl<'a> HallStore<'a> {
         let membership = self.get_membership(user_id, hall_id)?;
         Ok(membership.map(|m| m.role))
     }
+
+    /// Set hall host (for host election persistence)
+    #[instrument(skip(self))]
+    pub fn set_hall_host(&self, hall_id: Uuid, user_id: Uuid, epoch: u64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE halls SET current_host_id = ?1, election_epoch = ?2 WHERE id = ?3",
+            params![user_id.to_string(), epoch, hall_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Get current hall host (user_id, epoch)
+    #[instrument(skip(self))]
+    pub fn get_hall_host(&self, hall_id: Uuid) -> Result<Option<(Uuid, u64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT current_host_id, election_epoch FROM halls WHERE id = ?1")?;
+
+        let result = stmt
+            .query_row(params![hall_id.to_string()], |row| {
+                let host_id: Option<String> = row.get(0)?;
+                let epoch: u64 = row.get(1)?;
+                Ok((host_id, epoch))
+            })
+            .optional()?;
+
+        match result {
+            Some((Some(host_id_str), epoch)) => {
+                let host_id = parse_uuid(&host_id_str)?;
+                Ok(Some((host_id, epoch)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Get current host username for a hall
+    #[instrument(skip(self))]
+    pub fn get_current_host_name(&self, hall_id: Uuid) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT u.username FROM halls h
+             INNER JOIN users u ON u.id = h.current_host_id
+             WHERE h.id = ?1",
+        )?;
+
+        let username = stmt
+            .query_row(params![hall_id.to_string()], |row| row.get(0))
+            .optional()?;
+
+        Ok(username)
+    }
 }

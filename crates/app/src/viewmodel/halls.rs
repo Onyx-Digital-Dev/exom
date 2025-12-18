@@ -66,8 +66,12 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
             return;
         }
 
-        let hall = Hall::new(name, user_id);
+        let mut hall = Hall::new(name, user_id);
         let hall_id = hall.id;
+
+        // Creator becomes initial host
+        hall.current_host_id = Some(user_id);
+        hall.election_epoch = 1;
 
         let db = state_create.db.lock().unwrap();
 
@@ -142,7 +146,7 @@ pub fn setup_hall_bindings(window: &MainWindow, state: Arc<AppState>) {
                 hosting.set_host(Some(new_host));
                 hall.current_host_id = Some(new_host);
                 hall.election_epoch = hosting.election_epoch;
-                let _ = db.halls().update(&hall);
+                let _ = db.halls().set_hall_host(hall_id, new_host, hosting.election_epoch);
             }
             Some(HostElectionResult::PromptTakeover(_)) => {
                 // For now, just update UI to show prompt option
