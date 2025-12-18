@@ -239,6 +239,11 @@ fn store_network_message(state: &Arc<AppState>, net_msg: &NetMessage) {
         created_at: net_msg.timestamp,
         edited_at: None,
         is_deleted: false,
+        sequence: if net_msg.sequence > 0 {
+            Some(net_msg.sequence)
+        } else {
+            None
+        },
     };
 
     // Store in database

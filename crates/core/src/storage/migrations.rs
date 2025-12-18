@@ -136,6 +136,17 @@ const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 4,
+        description: "Add sequence column to messages for deterministic ordering",
+        sql: r#"
+            -- Add sequence column for network message ordering
+            ALTER TABLE messages ADD COLUMN sequence INTEGER;
+
+            -- Index for efficient ordering
+            CREATE INDEX IF NOT EXISTS idx_messages_sequence ON messages(hall_id, sequence);
+        "#,
+    },
 ];
 
 /// Initialize the migrations table
