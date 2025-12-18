@@ -58,6 +58,12 @@ pub enum NetworkEvent {
     BecameHost { port: u16 },
     /// Received batch of messages for sync
     SyncBatchReceived { messages: Vec<NetMessage> },
+    /// Detailed hosting status
+    HostingAt { addr: String, port: u16 },
+    /// Detailed connected status (as client)
+    ConnectedTo { addr: String },
+    /// Reconnect retry status
+    ReconnectRetry { attempt: u32, next_in_secs: u64 },
 }
 
 /// Network manager handle
@@ -460,6 +466,14 @@ async fn handle_reconnect_loop(
         let delay_ms = RECONNECT_DELAYS_MS[delay_idx];
         info!(delay_ms = delay_ms, "Reconnect backoff");
 
+        // Emit retry status with countdown
+        let _ = event_tx
+            .send(NetworkEvent::ReconnectRetry {
+                attempt: attempt as u32 + 1,
+                next_in_secs: delay_ms / 1000,
+            })
+            .await;
+
         // Wait with potential cancel check
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
 
@@ -555,6 +569,7 @@ async fn handle_start_hosting(
     {
         Ok(server) => {
             let addr = server.addr();
+            let actual_port = addr.port();
             let invite = InviteUrl::from_addr(addr, hall_id, token);
             let invite_url = invite.to_url();
 
@@ -573,6 +588,12 @@ async fn handle_start_hosting(
 
             let _ = event_tx
                 .send(NetworkEvent::StateChanged(NetworkState::Hosting))
+                .await;
+            let _ = event_tx
+                .send(NetworkEvent::HostingAt {
+                    addr: addr.ip().to_string(),
+                    port: actual_port,
+                })
                 .await;
         }
         Err(e) => {
@@ -656,13 +677,19 @@ async fn handle_connect(
                 .await;
 
             // Emit connection info for persistence
+            let host_addr_str = invite.socket_addr().to_string();
             let _ = event_tx
                 .send(NetworkEvent::Connected(ConnectionInfo {
                     hall_id: invite.hall_id,
                     invite_url,
-                    host_addr: Some(invite.socket_addr().to_string()),
+                    host_addr: Some(host_addr_str.clone()),
                     epoch,
                 }))
+                .await;
+            let _ = event_tx
+                .send(NetworkEvent::ConnectedTo {
+                    addr: host_addr_str,
+                })
                 .await;
 
             Some(client)

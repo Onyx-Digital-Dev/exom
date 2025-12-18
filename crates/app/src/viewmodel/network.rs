@@ -92,13 +92,27 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
     match event {
         NetworkEvent::StateChanged(net_state) => {
             let status = match net_state {
-                NetworkState::Offline => "Offline",
-                NetworkState::Connecting => "Connecting...",
-                NetworkState::Connected => "Connected",
-                NetworkState::Hosting => "Hosting",
-                NetworkState::Reconnecting => "Reconnecting...",
+                NetworkState::Offline => "Offline (local only)".to_string(),
+                NetworkState::Connecting => "Connecting...".to_string(),
+                NetworkState::Connected => "Connected (Client)".to_string(),
+                NetworkState::Hosting => "Connected (Host)".to_string(),
+                NetworkState::Reconnecting => "Reconnecting...".to_string(),
             };
             window.set_network_status(status.into());
+        }
+        NetworkEvent::HostingAt { addr, port } => {
+            window.set_network_status(format!("Connected (Host) - {}:{}", addr, port).into());
+        }
+        NetworkEvent::ConnectedTo { addr } => {
+            window.set_network_status(format!("Connected (Client) - {}", addr).into());
+        }
+        NetworkEvent::ReconnectRetry {
+            attempt,
+            next_in_secs,
+        } => {
+            window.set_network_status(
+                format!("Reconnecting... (retry {} in {}s)", attempt, next_in_secs).into(),
+            );
         }
         NetworkEvent::ChatReceived(net_msg) => {
             // Store incoming message locally if it's for the current hall
