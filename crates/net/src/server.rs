@@ -372,6 +372,25 @@ async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<Server
                 let _ = peer.tx.send(Message::Pong).await;
             }
         }
+        Message::Typing {
+            hall_id,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            // Broadcast typing status to all peers except sender
+            broadcast_to_peers(
+                state,
+                Message::Typing {
+                    hall_id,
+                    user_id,
+                    username,
+                    is_typing,
+                },
+                Some(sender_id),
+            )
+            .await;
+        }
         Message::SyncSince {
             hall_id,
             last_sequence,

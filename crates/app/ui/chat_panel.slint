@@ -23,9 +23,11 @@ export component ChatPanel inherits Rectangle {
     in property <string> host-name;
     in property <string> user-role;
     in property <[MessageItem]> messages;
+    in property <string> typing-indicator;
 
     callback send-message(string);
     callback delete-message(string);
+    callback typing-changed();
 
     background: Theme.color-bg;
 
@@ -202,6 +204,25 @@ export component ChatPanel inherits Rectangle {
 
         Separator {}
 
+        // Typing indicator - shows above compose bar when someone is typing
+        if root.typing-indicator != "": Rectangle {
+            height: 20px;
+            background: Theme.color-panel;
+
+            HorizontalLayout {
+                padding-left: Theme.pad-md;
+                padding-right: Theme.pad-md;
+                alignment: start;
+
+                Text {
+                    text: root.typing-indicator;
+                    color: Theme.color-text-dim;
+                    font-size: Theme.text-xs;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
         // Compose bar with send acknowledgment
         Rectangle {
             height: 56px;
@@ -233,9 +254,10 @@ export component ChatPanel inherits Rectangle {
                                 self.set-focus();
                             }
                         }
-                        // Reset flash when user starts typing
+                        // Reset flash when user starts typing and notify typing
                         edited => {
                             compose-bar.sent-flash = false;
+                            root.typing-changed();
                         }
                     }
 

@@ -59,6 +59,9 @@ export component MainWindow inherits Window {
     in-out property <bool> is-network-connected: false;
     in-out property <string> invite-url: "";
 
+    // Typing indicator
+    in-out property <string> typing-indicator: "";
+
     // Switcher filtering callback
     callback filter-switcher-halls(string);
 
@@ -82,6 +85,7 @@ export component MainWindow inherits Window {
     callback load-messages();
     callback send-message(string);
     callback delete-message(string);
+    callback typing-changed();
 
     // Member callbacks
     callback load-members();
@@ -191,8 +195,10 @@ export component MainWindow inherits Window {
                 host-name: root.current-host-name;
                 user-role: root.current-user-role;
                 messages: root.messages;
+                typing-indicator: root.typing-indicator;
                 send-message(msg) => { root.send-message(msg); }
                 delete-message(id) => { root.delete-message(id); }
+                typing-changed => { root.typing-changed(); }
             }
 
             EmptyChatPanel {

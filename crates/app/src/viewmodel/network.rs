@@ -61,6 +61,24 @@ pub fn setup_network_bindings(
         },
     );
 
+    // Set up a timer to prune stale typing indicators (250ms interval, 2s stale threshold)
+    let window_weak = window.as_weak();
+    let state_clone = state.clone();
+    let typing_prune_timer = slint::Timer::default();
+    typing_prune_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(250),
+        move || {
+            if state_clone.prune_typing_users(2000) {
+                if let Some(window) = window_weak.upgrade() {
+                    update_typing_indicator(&window, &state_clone);
+                }
+            }
+        },
+    );
+    // Keep timer alive
+    std::mem::forget(typing_prune_timer);
+
     // Copy invite callback
     let network_manager_clone = network_manager.clone();
     let window_weak = window.as_weak();
@@ -189,8 +207,10 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                 state.add_system_message(hall_id, "Connection lost".to_string());
                 window.invoke_load_messages();
             }
-            // Clear known members on disconnect
+            // Clear known members and typing users on disconnect
             state.clear_known_members();
+            state.clear_all_typing();
+            update_typing_indicator(window, state);
             set_network_status(window, "Disconnected", false);
             // Reload members from local database
             window.invoke_load_members();
@@ -281,6 +301,21 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             state.confirm_message(message_id);
             window.invoke_load_messages();
         }
+        NetworkEvent::TypingReceived {
+            hall_id: _,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            // Update typing state (exclude self via get_typing_users)
+            if is_typing {
+                state.set_user_typing(user_id, username);
+            } else {
+                state.clear_user_typing(user_id);
+            }
+            // Update typing indicator in UI
+            update_typing_indicator(window, state);
+        }
     }
 }
 
@@ -366,6 +401,27 @@ fn net_role_display(role: NetRole) -> &'static str {
         NetRole::Moderator => "Moderator",
         NetRole::Agent => "Agent",
         NetRole::Fellow => "Fellow",
+    }
+}
+
+/// Update the typing indicator text in the UI
+fn update_typing_indicator(window: &MainWindow, state: &Arc<AppState>) {
+    let typing_users = state.get_typing_users();
+    let text = format_typing_text(&typing_users);
+    window.set_typing_indicator(text.into());
+}
+
+/// Format typing indicator text
+fn format_typing_text(typing_users: &[(uuid::Uuid, String)]) -> String {
+    match typing_users.len() {
+        0 => String::new(),
+        1 => format!("{} typing...", typing_users[0].1),
+        2 => format!("{}, {} typing...", typing_users[0].1, typing_users[1].1),
+        3 => format!(
+            "{}, {}, {} typing...",
+            typing_users[0].1, typing_users[1].1, typing_users[2].1
+        ),
+        _ => "Several people typing...".to_string(),
     }
 }
 

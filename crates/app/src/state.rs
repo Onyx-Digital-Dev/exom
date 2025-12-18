@@ -1,8 +1,9 @@
 //! Application state management
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
@@ -38,6 +39,8 @@ pub struct AppState {
     pub known_members: Arc<Mutex<Vec<TrackedMember>>>,
     /// Messages pending delivery confirmation
     pub pending_messages: Arc<Mutex<HashSet<Uuid>>>,
+    /// Users currently typing in halls: user_id -> (username, last_typing_time)
+    pub typing_users: Arc<Mutex<HashMap<Uuid, (String, Instant)>>>,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
             system_messages: Arc::new(Mutex::new(Vec::new())),
             known_members: Arc::new(Mutex::new(Vec::new())),
             pending_messages: Arc::new(Mutex::new(HashSet::new())),
+            typing_users: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -226,5 +230,44 @@ impl AppState {
         }
 
         count
+    }
+
+    /// Set a user as typing (or update their last typing time)
+    pub fn set_user_typing(&self, user_id: Uuid, username: String) {
+        self.typing_users
+            .lock()
+            .unwrap()
+            .insert(user_id, (username, Instant::now()));
+    }
+
+    /// Clear a user's typing status
+    pub fn clear_user_typing(&self, user_id: Uuid) {
+        self.typing_users.lock().unwrap().remove(&user_id);
+    }
+
+    /// Clear all typing users (e.g., when disconnecting)
+    pub fn clear_all_typing(&self) {
+        self.typing_users.lock().unwrap().clear();
+    }
+
+    /// Get list of currently typing users (excluding self), returns (user_id, username)
+    pub fn get_typing_users(&self) -> Vec<(Uuid, String)> {
+        let my_user_id = self.current_user_id();
+        self.typing_users
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(uid, _)| my_user_id.map_or(true, |my_id| **uid != my_id))
+            .map(|(uid, (username, _))| (*uid, username.clone()))
+            .collect()
+    }
+
+    /// Prune stale typing entries (older than threshold)
+    /// Returns true if any entries were pruned
+    pub fn prune_typing_users(&self, max_age_ms: u64) -> bool {
+        let mut typing = self.typing_users.lock().unwrap();
+        let before = typing.len();
+        typing.retain(|_, (_, instant)| instant.elapsed().as_millis() < max_age_ms as u128);
+        typing.len() < before
     }
 }

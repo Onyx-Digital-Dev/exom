@@ -70,6 +70,13 @@ pub enum ServerEvent {
     },
     /// Message was acknowledged by host
     MessageAcked { message_id: Uuid },
+    /// User typing status received
+    TypingReceived {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
 }
 
 /// Client handle for network operations
@@ -164,6 +171,25 @@ impl Client {
     pub async fn ping(&self) -> Result<()> {
         self.cmd_tx
             .send(ClientCommand::Send(Message::Ping))
+            .await
+            .map_err(|_| Error::NotConnected)
+    }
+
+    /// Send typing status
+    pub async fn send_typing(
+        &self,
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    ) -> Result<()> {
+        self.cmd_tx
+            .send(ClientCommand::Send(Message::Typing {
+                hall_id,
+                user_id,
+                username,
+                is_typing,
+            }))
             .await
             .map_err(|_| Error::NotConnected)
     }
@@ -461,6 +487,22 @@ async fn handle_server_message(
             debug!(message_id = %message_id, "Received message ack");
             let _ = event_tx
                 .send(ServerEvent::MessageAcked { message_id })
+                .await;
+        }
+        Message::Typing {
+            hall_id,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            debug!(user_id = %user_id, is_typing = is_typing, "Received typing status");
+            let _ = event_tx
+                .send(ServerEvent::TypingReceived {
+                    hall_id,
+                    user_id,
+                    username,
+                    is_typing,
+                })
                 .await;
         }
         _ => {

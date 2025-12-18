@@ -1,6 +1,7 @@
 //! Chat view model
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Instant;
 
 use chrono::{DateTime, Duration, Utc};
 use exom_core::Message;
@@ -9,9 +10,48 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 use tokio::sync::Mutex;
 
 use crate::network::{NetworkManager, NetworkState};
-use crate::state::{AppState, SystemMessage};
+use crate::state::AppState;
 use crate::MainWindow;
 use crate::MessageItem;
+
+/// Typing throttle state
+struct TypingThrottle {
+    /// Last time we sent typing=true
+    last_sent: Option<Instant>,
+    /// Timer ID for stop-typing timeout (stored to cancel)
+    stop_timer_active: bool,
+}
+
+impl TypingThrottle {
+    fn new() -> Self {
+        Self {
+            last_sent: None,
+            stop_timer_active: false,
+        }
+    }
+
+    /// Check if we should send a typing event (600ms throttle)
+    fn should_send(&mut self) -> bool {
+        let now = Instant::now();
+        match self.last_sent {
+            None => {
+                self.last_sent = Some(now);
+                true
+            }
+            Some(last) if now.duration_since(last).as_millis() >= 600 => {
+                self.last_sent = Some(now);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Reset throttle (called when stop-typing is sent)
+    fn reset(&mut self) {
+        self.last_sent = None;
+        self.stop_timer_active = false;
+    }
+}
 
 /// Combined message for sorting
 enum CombinedMessage {
@@ -290,5 +330,83 @@ pub fn setup_chat_bindings(
         if let Some(w) = window_weak.upgrade() {
             w.invoke_load_messages();
         }
+    });
+
+    // Typing changed - throttle and debounce
+    let state_typing = state.clone();
+    let network_manager_typing = _network_manager.clone();
+    let typing_throttle = Arc::new(StdMutex::new(TypingThrottle::new()));
+    let typing_throttle_clone = typing_throttle.clone();
+    let stop_typing_timer = Arc::new(StdMutex::new(None::<slint::Timer>));
+    let stop_typing_timer_clone = stop_typing_timer.clone();
+
+    window.on_typing_changed(move || {
+        let user_id = match state_typing.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let hall_id = match state_typing.current_hall_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let username = state_typing.current_username().unwrap_or_default();
+
+        // Check throttle
+        let should_send = {
+            let mut throttle = typing_throttle_clone.lock().unwrap();
+            throttle.should_send()
+        };
+
+        if should_send {
+            // Send typing=true
+            let nm = network_manager_typing.clone();
+            tokio::spawn(async move {
+                if let Ok(nm) = nm.try_lock() {
+                    let _ = nm.send_typing(hall_id, user_id, username.clone(), true).await;
+                }
+            });
+        }
+
+        // Reset/start the stop-typing timer (1500ms)
+        let nm_for_stop = network_manager_typing.clone();
+        let throttle_for_stop = typing_throttle_clone.clone();
+        let state_for_stop = state_typing.clone();
+
+        // Create new timer for stop-typing
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::SingleShot,
+            std::time::Duration::from_millis(1500),
+            move || {
+                // Reset throttle
+                {
+                    let mut throttle = throttle_for_stop.lock().unwrap();
+                    throttle.reset();
+                }
+
+                // Send typing=false
+                let user_id = match state_for_stop.current_user_id() {
+                    Some(id) => id,
+                    None => return,
+                };
+                let hall_id = match state_for_stop.current_hall_id() {
+                    Some(id) => id,
+                    None => return,
+                };
+                let username = state_for_stop.current_username().unwrap_or_default();
+
+                let nm = nm_for_stop.clone();
+                tokio::spawn(async move {
+                    if let Ok(nm) = nm.try_lock() {
+                        let _ = nm.send_typing(hall_id, user_id, username, false).await;
+                    }
+                });
+            },
+        );
+
+        // Store timer to keep it alive (replaces previous)
+        *stop_typing_timer_clone.lock().unwrap() = Some(timer);
     });
 }

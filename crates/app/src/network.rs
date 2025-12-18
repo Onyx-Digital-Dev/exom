@@ -60,6 +60,13 @@ pub enum NetworkEvent {
     SyncBatchReceived { messages: Vec<NetMessage> },
     /// Message was acknowledged by host
     MessageAcked { message_id: Uuid },
+    /// Typing status received from another user
+    TypingReceived {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
     /// Detailed hosting status
     HostingAt { addr: String, port: u16 },
     /// Detailed connected status (as client)
@@ -122,6 +129,12 @@ enum NetworkCommand {
     /// Cancel ongoing reconnect
     CancelReconnect,
     SendChat(NetMessage),
+    SendTyping {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
     Disconnect,
 }
 
@@ -209,6 +222,25 @@ impl NetworkManager {
     pub async fn send_chat(&self, msg: NetMessage) -> Result<(), &'static str> {
         self.cmd_tx
             .send(NetworkCommand::SendChat(msg))
+            .await
+            .map_err(|_| "Network task not running")
+    }
+
+    /// Send typing status
+    pub async fn send_typing(
+        &self,
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    ) -> Result<(), &'static str> {
+        self.cmd_tx
+            .send(NetworkCommand::SendTyping {
+                hall_id,
+                user_id,
+                username,
+                is_typing,
+            })
             .await
             .map_err(|_| "Network task not running")
     }
@@ -374,6 +406,26 @@ async fn network_task(
                         } else if let Some(c) = &client {
                             let _ = c.send_chat(msg).await;
                             // Ack will come from host
+                        }
+                    }
+                    Some(NetworkCommand::SendTyping {
+                        hall_id,
+                        user_id,
+                        username,
+                        is_typing,
+                    }) => {
+                        // Send via server broadcast if hosting, or via client if connected
+                        let s = state.read().await;
+                        if let Some(server) = &s.server {
+                            let typing_msg = exom_net::Message::Typing {
+                                hall_id,
+                                user_id,
+                                username: username.clone(),
+                                is_typing,
+                            };
+                            server.broadcast(typing_msg).await;
+                        } else if let Some(c) = &client {
+                            let _ = c.send_typing(hall_id, user_id, username, is_typing).await;
                         }
                     }
                     Some(NetworkCommand::Disconnect) => {
@@ -988,6 +1040,21 @@ async fn handle_client_event(
             debug!(message_id = %message_id, "Message acknowledged");
             let _ = event_tx
                 .send(NetworkEvent::MessageAcked { message_id })
+                .await;
+        }
+        ServerEvent::TypingReceived {
+            hall_id,
+            user_id,
+            username,
+            is_typing,
+        } => {
+            let _ = event_tx
+                .send(NetworkEvent::TypingReceived {
+                    hall_id,
+                    user_id,
+                    username,
+                    is_typing,
+                })
                 .await;
         }
     }

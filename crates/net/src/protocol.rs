@@ -100,6 +100,14 @@ pub enum Message {
     /// Acknowledgment that a message was received and broadcast
     MessageAck { message_id: Uuid },
 
+    /// User typing status in a hall
+    Typing {
+        hall_id: Uuid,
+        user_id: Uuid,
+        username: String,
+        is_typing: bool,
+    },
+
     /// Updated member list (broadcast on join/leave)
     MemberList { members: Vec<PeerInfo> },
 
