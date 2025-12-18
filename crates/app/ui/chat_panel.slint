@@ -1,7 +1,7 @@
 // Center panel - Chat and activity
 
 import { Theme } from "theme.slint";
-import { TextField, Button, Separator, RoleBadge, HostBadge } from "components.slint";
+import { TextField, Button, Separator, RoleBadge, HostBadge, EmptyState } from "components.slint";
 
 // Message data with grouping support
 export struct MessageItem {
@@ -81,6 +81,13 @@ export component ChatPanel inherits Rectangle {
             VerticalLayout {
                 padding: Theme.pad-md;
                 spacing: 0;
+
+                // Empty state when no messages
+                if root.messages.length == 0: EmptyState {
+                    title: "No Messages";
+                    description: "Start the conversation by sending a message.";
+                    vertical-stretch: 1;
+                }
 
                 for msg in root.messages: Rectangle {
                     background: transparent;

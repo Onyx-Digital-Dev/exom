@@ -1,7 +1,7 @@
 // Right panel - Members and settings
 
 import { Theme } from "theme.slint";
-import { SecondaryButton, DangerButton, OnlineIndicator, RoleBadge, HostBadge, Separator, StatusText } from "components.slint";
+import { SecondaryButton, DangerButton, OnlineIndicator, RoleBadge, HostBadge, Separator, StatusText, EmptyState } from "components.slint";
 
 // Member data
 export struct MemberItem {
@@ -102,6 +102,13 @@ export component MembersPanel inherits Rectangle {
                 VerticalLayout {
                     padding: Theme.pad-sm;
                     spacing: 2px;
+
+                    // Empty state when no members
+                    if root.members.length == 0: EmptyState {
+                        title: "No Members";
+                        description: "Members will appear here when they join.";
+                        vertical-stretch: 1;
+                    }
 
                     for member in root.members: Rectangle {
                         height: 44px;
@@ -223,6 +230,13 @@ export component MembersPanel inherits Rectangle {
                 VerticalLayout {
                     padding: Theme.pad-sm;
                     spacing: 2px;
+
+                    // Empty state when no files
+                    if root.chest-files.length == 0: EmptyState {
+                        title: "Chest Empty";
+                        description: "Shared files will appear here.";
+                        vertical-stretch: 1;
+                    }
 
                     for file in root.chest-files: Rectangle {
                         height: 36px;

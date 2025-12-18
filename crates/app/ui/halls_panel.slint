@@ -1,7 +1,7 @@
 // Left panel - Hall selector
 
 import { Theme } from "theme.slint";
-import { TextField, Button, ListItem, RoleBadge, ErrorText, Separator } from "components.slint";
+import { TextField, Button, ListItem, RoleBadge, ErrorText, Separator, EmptyState } from "components.slint";
 
 // Hall list item data
 export struct HallItem {
@@ -52,6 +52,13 @@ export component HallsPanel inherits Rectangle {
             VerticalLayout {
                 padding: Theme.pad-sm;
                 spacing: 2px;
+
+                // Empty state when no halls
+                if root.halls.length == 0: EmptyState {
+                    title: "No Halls";
+                    description: "Create a hall or join one with an invite code.";
+                    height: 120px;
+                }
 
                 for hall in root.halls: ListItem {
                     selected: hall.id == root.current-hall-id;
