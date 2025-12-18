@@ -6,12 +6,13 @@ import { AuthView } from "auth.slint";
 import { HallsPanel, HallItem } from "halls_panel.slint";
 import { ChatPanel, EmptyChatPanel, MessageItem } from "chat_panel.slint";
 import { MembersPanel, MemberItem, ChestFileItem } from "members_panel.slint";
+import { HallSwitcher, SwitcherHallItem } from "hall_switcher.slint";
 
-export { HallItem, MessageItem, MemberItem, ChestFileItem }
+export { HallItem, MessageItem, MemberItem, ChestFileItem, SwitcherHallItem }
 
 export component MainWindow inherits Window {
     title: "Exom";
-    background: Theme.background;
+    background: Theme.color-bg;
     min-width: 900px;
     min-height: 600px;
     preferred-width: 1200px;
@@ -41,6 +42,10 @@ export component MainWindow inherits Window {
     in-out property <string> chest-path;
     in-out property <string> chest-status;
 
+    // Switcher state
+    in-out property <[SwitcherHallItem]> switcher-halls: [];
+    property <bool> show-switcher: false;
+
     // Auth callbacks
     callback login(string, string);
     callback register(string, string);
@@ -68,6 +73,28 @@ export component MainWindow inherits Window {
     // Chest callbacks
     callback load-chest-files();
 
+    // Global keyboard handling (OSV-first: Alt/Ctrl/Shift/Esc only)
+    global-keys := FocusScope {
+        enabled: root.is-logged-in;
+
+        key-pressed(event) => {
+            // Alt+X: Open hall switcher
+            if event.modifiers.alt && event.text == "x" {
+                root.show-switcher = true;
+                hall-switcher.focus-search();
+                return accept;
+            }
+            // Esc: Close any open modal
+            if event.text == Key.Escape {
+                if root.show-switcher {
+                    root.show-switcher = false;
+                    return accept;
+                }
+            }
+            return reject;
+        }
+    }
+
     // Auth view
     if !root.is-logged-in: AuthView {
         error-text: root.auth-error;
@@ -80,16 +107,16 @@ export component MainWindow inherits Window {
         // Top bar
         Rectangle {
             height: 36px;
-            background: Theme.surface;
+            background: Theme.color-panel;
 
             HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
+                padding-left: Theme.pad-md;
+                padding-right: Theme.pad-md;
 
                 Text {
                     text: "Exom";
-                    color: Theme.text-primary;
-                    font-size: Theme.font-md;
+                    color: Theme.color-text;
+                    font-size: Theme.text-md;
                     font-weight: 600;
                     vertical-alignment: center;
                 }
@@ -98,12 +125,12 @@ export component MainWindow inherits Window {
 
                 Text {
                     text: root.current-username;
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-sm;
+                    color: Theme.color-text-muted;
+                    font-size: Theme.text-sm;
                     vertical-alignment: center;
                 }
 
-                Rectangle { width: Theme.spacing-md; }
+                Rectangle { width: Theme.pad-md; }
 
                 Button {
                     label: "Logout";
@@ -161,16 +188,28 @@ export component MainWindow inherits Window {
             // Empty right panel placeholder
             if root.current-hall-id == "": Rectangle {
                 width: Theme.right-panel-width;
-                background: Theme.surface;
+                background: Theme.color-panel;
 
                 Text {
-                    text: "No Hall Selected";
-                    color: Theme.text-muted;
-                    font-size: Theme.font-sm;
+                    text: "";
+                    color: Theme.color-text-dim;
+                    font-size: Theme.text-sm;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
             }
+        }
+    }
+
+    // Hall quick switcher overlay (Alt+X)
+    hall-switcher := HallSwitcher {
+        halls: root.switcher-halls;
+        show: root.show-switcher;
+        select-hall(id) => {
+            root.select-hall(id);
+        }
+        close-requested => {
+            root.show-switcher = false;
         }
     }
 

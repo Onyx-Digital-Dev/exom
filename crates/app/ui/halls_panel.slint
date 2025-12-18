@@ -1,7 +1,7 @@
 // Left panel - Hall selector
 
 import { Theme } from "theme.slint";
-import { TextInput, Button, ListItem, RoleBadge, ErrorText, Separator } from "components.slint";
+import { TextField, Button, ListItem, RoleBadge, ErrorText, Separator } from "components.slint";
 
 // Hall list item data
 export struct HallItem {
@@ -19,24 +19,24 @@ export component HallsPanel inherits Rectangle {
     callback create-hall(string);
     callback join-with-invite(string);
 
-    background: Theme.surface;
+    background: Theme.color-panel;
     width: Theme.left-panel-width;
 
     VerticalLayout {
         // Header
         Rectangle {
             height: 48px;
-            background: Theme.surface;
+            background: Theme.color-panel;
 
             HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
+                padding-left: Theme.pad-md;
+                padding-right: Theme.pad-md;
                 alignment: space-between;
 
                 Text {
                     text: "Halls";
-                    color: Theme.text-primary;
-                    font-size: Theme.font-lg;
+                    color: Theme.color-text;
+                    font-size: Theme.text-lg;
                     font-weight: 500;
                     vertical-alignment: center;
                 }
@@ -50,7 +50,7 @@ export component HallsPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding: Theme.spacing-sm;
+                padding: Theme.pad-sm;
                 spacing: 2px;
 
                 for hall in root.halls: ListItem {
@@ -59,14 +59,14 @@ export component HallsPanel inherits Rectangle {
                     clicked => { root.select-hall(hall.id); }
 
                     HorizontalLayout {
-                        padding-left: Theme.spacing-sm;
-                        padding-right: Theme.spacing-sm;
-                        spacing: Theme.spacing-sm;
+                        padding-left: Theme.pad-sm;
+                        padding-right: Theme.pad-sm;
+                        spacing: Theme.pad-sm;
 
                         Text {
                             text: hall.name;
-                            color: Theme.text-primary;
-                            font-size: Theme.font-md;
+                            color: Theme.color-text;
+                            font-size: Theme.text-md;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                             overflow: elide;
@@ -74,6 +74,7 @@ export component HallsPanel inherits Rectangle {
 
                         RoleBadge {
                             role: hall.role;
+                            subtle: true;
                         }
                     }
                 }
@@ -84,31 +85,51 @@ export component HallsPanel inherits Rectangle {
 
         // Create/Join section
         Rectangle {
-            height: 120px;
-            background: Theme.surface;
+            height: 140px;
+            background: Theme.color-panel;
 
             VerticalLayout {
-                padding: Theme.spacing-sm;
-                spacing: Theme.spacing-sm;
+                padding: Theme.pad-sm;
+                spacing: Theme.pad-sm;
 
-                new-hall-input := TextInput {
+                new-hall-input := TextField {
                     placeholder: "New hall name";
-                    accepted => { root.create-hall(self.text); self.text = ""; }
+                    accepted => {
+                        if self.text != "" {
+                            root.create-hall(self.text);
+                            self.clear();
+                        }
+                    }
                 }
 
                 Button {
                     label: "Create Hall";
-                    clicked => { root.create-hall(new-hall-input.text); new-hall-input.text = ""; }
+                    clicked => {
+                        if new-hall-input.text != "" {
+                            root.create-hall(new-hall-input.text);
+                            new-hall-input.clear();
+                        }
+                    }
                 }
 
-                invite-input := TextInput {
+                invite-input := TextField {
                     placeholder: "Invite code";
-                    accepted => { root.join-with-invite(self.text); self.text = ""; }
+                    accepted => {
+                        if self.text != "" {
+                            root.join-with-invite(self.text);
+                            self.clear();
+                        }
+                    }
                 }
 
                 Button {
                     label: "Join with Invite";
-                    clicked => { root.join-with-invite(invite-input.text); invite-input.text = ""; }
+                    clicked => {
+                        if invite-input.text != "" {
+                            root.join-with-invite(invite-input.text);
+                            invite-input.clear();
+                        }
+                    }
                 }
 
                 ErrorText {

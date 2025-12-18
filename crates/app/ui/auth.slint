@@ -1,7 +1,7 @@
 // Authentication view (login/register)
 
 import { Theme } from "theme.slint";
-import { TextInput, Button, ErrorText } from "components.slint";
+import { TextField, PasswordField, PrimaryButton, SecondaryButton, ErrorText } from "components.slint";
 
 export component AuthView inherits Rectangle {
     in property <string> error-text;
@@ -9,58 +9,58 @@ export component AuthView inherits Rectangle {
     callback login(string, string);
     callback register(string, string);
 
-    background: Theme.background;
+    background: Theme.color-bg;
 
     VerticalLayout {
         alignment: center;
-        spacing: Theme.spacing-lg;
+        spacing: Theme.pad-lg;
 
         Rectangle {
             width: 320px;
-            background: Theme.surface;
-            border-color: Theme.border;
+            background: Theme.color-panel;
+            border-color: Theme.color-border;
             border-width: Theme.border-width;
+            border-radius: Theme.radius-md;
 
             VerticalLayout {
-                padding: Theme.spacing-xl;
-                spacing: Theme.spacing-md;
+                padding: Theme.pad-xl;
+                spacing: Theme.pad-md;
 
                 Text {
                     text: "Exom";
-                    color: Theme.text-primary;
-                    font-size: Theme.font-xl;
+                    color: Theme.color-text;
+                    font-size: Theme.text-xl;
                     font-weight: 600;
                     horizontal-alignment: center;
                 }
 
                 Text {
                     text: "Hall-based collaboration";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-sm;
+                    color: Theme.color-text-muted;
+                    font-size: Theme.text-sm;
                     horizontal-alignment: center;
                 }
 
-                Rectangle { height: Theme.spacing-md; }
+                Rectangle { height: Theme.pad-md; }
 
                 Text {
                     text: "Username";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-sm;
+                    color: Theme.color-text-muted;
+                    font-size: Theme.text-sm;
                 }
 
-                username-input := TextInput {
+                username-input := TextField {
                     placeholder: "Enter username";
                 }
 
                 Text {
                     text: "Password";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-sm;
+                    color: Theme.color-text-muted;
+                    font-size: Theme.text-sm;
                 }
 
-                password-input := TextInput {
+                password-input := PasswordField {
                     placeholder: "Enter password";
-                    password: true;
                     accepted => { root.login(username-input.text, password-input.text); }
                 }
 
@@ -69,20 +69,19 @@ export component AuthView inherits Rectangle {
                     horizontal-alignment: center;
                 }
 
-                Rectangle { height: Theme.spacing-sm; }
+                Rectangle { height: Theme.pad-sm; }
 
                 HorizontalLayout {
-                    spacing: Theme.spacing-md;
+                    spacing: Theme.pad-md;
 
-                    Button {
+                    SecondaryButton {
                         label: "Register";
                         horizontal-stretch: 1;
                         clicked => { root.register(username-input.text, password-input.text); }
                     }
 
-                    Button {
+                    PrimaryButton {
                         label: "Login";
-                        primary: true;
                         horizontal-stretch: 1;
                         clicked => { root.login(username-input.text, password-input.text); }
                     }

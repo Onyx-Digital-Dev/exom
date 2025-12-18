@@ -1,0 +1,155 @@
+// Hall Quick Switcher Modal (Alt+X)
+
+import { Theme } from "theme.slint";
+import { TextField, ListItem } from "components.slint";
+
+// Reuse HallItem structure
+export struct SwitcherHallItem {
+    id: string,
+    name: string,
+    role: string,
+}
+
+export component HallSwitcher inherits Rectangle {
+    in property <[SwitcherHallItem]> halls: [];
+    in property <bool> show: false;
+
+    callback select-hall(string);
+    callback close-requested();
+
+    // Full screen overlay
+    background: root.show ? #00000080 : transparent;
+    visible: root.show;
+
+    // Backdrop click to close
+    TouchArea {
+        clicked => { root.close-requested(); }
+    }
+
+    // Keyboard handling for Esc and navigation
+    scope := FocusScope {
+        enabled: root.show;
+
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.close-requested();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    // Modal container
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 100px;
+        width: 400px;
+        min-height: 80px;
+        max-height: 400px;
+        background: Theme.color-panel;
+        border-color: Theme.color-border;
+        border-width: Theme.border-width;
+        border-radius: Theme.radius-md;
+
+        // Prevent backdrop click from closing when clicking modal
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 0;
+
+            // Search input
+            Rectangle {
+                height: 44px;
+                background: Theme.color-panel-elevated;
+                border-radius: Theme.radius-md;
+
+                HorizontalLayout {
+                    padding: Theme.pad-sm;
+
+                    search-input := TextField {
+                        placeholder: "Switch to hall...";
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            // Hall list
+            Flickable {
+                vertical-stretch: 1;
+                max-height: 320px;
+
+                VerticalLayout {
+                    padding: Theme.pad-xs;
+                    spacing: 2px;
+
+                    for hall in root.halls: ListItem {
+                        clicked => {
+                            root.select-hall(hall.id);
+                            root.close-requested();
+                        }
+
+                        HorizontalLayout {
+                            padding-left: Theme.pad-sm;
+                            padding-right: Theme.pad-sm;
+                            spacing: Theme.pad-sm;
+
+                            Text {
+                                text: hall.name;
+                                color: Theme.color-text;
+                                font-size: Theme.text-md;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: hall.role;
+                                color: Theme.color-text-dim;
+                                font-size: Theme.text-xs;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Empty state
+                    if root.halls.length == 0: Rectangle {
+                        height: 60px;
+
+                        Text {
+                            text: "No halls found";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Hint bar
+            Rectangle {
+                height: 28px;
+                background: Theme.color-panel-elevated;
+                border-radius: Theme.radius-md;
+
+                HorizontalLayout {
+                    padding-left: Theme.pad-sm;
+                    padding-right: Theme.pad-sm;
+
+                    Text {
+                        text: "Esc to close";
+                        color: Theme.color-text-dim;
+                        font-size: Theme.text-xs;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    // Focus the search input when shown
+    public function focus-search() {
+        search-input.set-focus();
+        scope.focus();
+    }
+}

@@ -1,7 +1,7 @@
 // Center panel - Chat and activity
 
 import { Theme } from "theme.slint";
-import { TextInput, Button, Separator, RoleBadge } from "components.slint";
+import { TextField, Button, Separator, RoleBadge, HostBadge } from "components.slint";
 
 // Message data
 export struct MessageItem {
@@ -22,17 +22,17 @@ export component ChatPanel inherits Rectangle {
     callback send-message(string);
     callback delete-message(string);
 
-    background: Theme.background;
+    background: Theme.color-bg;
 
     VerticalLayout {
         // Header
         Rectangle {
             height: 48px;
-            background: Theme.surface;
+            background: Theme.color-panel;
 
             HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
+                padding-left: Theme.pad-md;
+                padding-right: Theme.pad-md;
 
                 VerticalLayout {
                     alignment: center;
@@ -40,24 +40,30 @@ export component ChatPanel inherits Rectangle {
 
                     Text {
                         text: root.hall-name;
-                        color: Theme.text-primary;
-                        font-size: Theme.font-lg;
+                        color: Theme.color-text;
+                        font-size: Theme.text-lg;
                         font-weight: 500;
                     }
 
                     HorizontalLayout {
-                        spacing: Theme.spacing-md;
+                        spacing: Theme.pad-md;
 
-                        Text {
-                            text: "Host: " + root.host-name;
-                            color: Theme.text-secondary;
-                            font-size: Theme.font-xs;
+                        if root.host-name != "": HorizontalLayout {
+                            spacing: Theme.pad-xs;
+
+                            HostBadge {}
+
+                            Text {
+                                text: root.host-name;
+                                color: Theme.color-text-muted;
+                                font-size: Theme.text-xs;
+                                vertical-alignment: center;
+                            }
                         }
 
-                        Text {
-                            text: root.user-role;
-                            color: Theme.text-muted;
-                            font-size: Theme.font-xs;
+                        RoleBadge {
+                            role: root.user-role;
+                            subtle: true;
                         }
                     }
                 }
@@ -71,8 +77,8 @@ export component ChatPanel inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
+                padding: Theme.pad-md;
+                spacing: Theme.pad-sm;
 
                 for msg in root.messages: Rectangle {
                     background: transparent;
@@ -82,37 +88,38 @@ export component ChatPanel inherits Rectangle {
 
                         // Header row
                         HorizontalLayout {
-                            spacing: Theme.spacing-sm;
+                            spacing: Theme.pad-sm;
 
                             Text {
                                 text: msg.sender-name;
-                                color: Theme.accent;
-                                font-size: Theme.font-sm;
+                                color: Theme.color-accent;
+                                font-size: Theme.text-sm;
                                 font-weight: 500;
                             }
 
                             RoleBadge {
                                 role: msg.sender-role;
+                                subtle: true;
                             }
 
                             Text {
                                 text: msg.timestamp;
-                                color: Theme.text-muted;
-                                font-size: Theme.font-xs;
+                                color: Theme.color-text-dim;
+                                font-size: Theme.text-xs;
                             }
 
                             if msg.is-edited: Text {
                                 text: "(edited)";
-                                color: Theme.text-muted;
-                                font-size: Theme.font-xs;
+                                color: Theme.color-text-dim;
+                                font-size: Theme.text-xs;
                             }
                         }
 
                         // Content
                         Text {
                             text: msg.content;
-                            color: Theme.text-primary;
-                            font-size: Theme.font-md;
+                            color: Theme.color-text;
+                            font-size: Theme.text-md;
                             wrap: word-wrap;
                         }
                     }
@@ -125,18 +132,22 @@ export component ChatPanel inherits Rectangle {
         // Compose bar
         Rectangle {
             height: 56px;
-            background: Theme.surface;
+            background: Theme.color-panel;
 
             HorizontalLayout {
-                padding: Theme.spacing-sm;
-                spacing: Theme.spacing-sm;
+                padding: Theme.pad-sm;
+                spacing: Theme.pad-sm;
 
-                message-input := TextInput {
+                message-input := TextField {
                     horizontal-stretch: 1;
                     placeholder: "Type a message...";
                     accepted => {
-                        root.send-message(self.text);
-                        self.text = "";
+                        if self.text != "" {
+                            root.send-message(self.text);
+                            self.clear();
+                            // Focus stays on input - typing-first UX
+                            self.set-focus();
+                        }
                     }
                 }
 
@@ -144,33 +155,43 @@ export component ChatPanel inherits Rectangle {
                     label: "Send";
                     primary: true;
                     clicked => {
-                        root.send-message(message-input.text);
-                        message-input.text = "";
+                        if message-input.text != "" {
+                            root.send-message(message-input.text);
+                            message-input.clear();
+                            // Focus stays on input - typing-first UX
+                            message-input.set-focus();
+                        }
                     }
                 }
             }
         }
     }
+
+    // Focus the input when panel becomes visible
+    public function focus-input() {
+        message-input.set-focus();
+    }
 }
 
 // Empty state when no hall selected
 export component EmptyChatPanel inherits Rectangle {
-    background: Theme.background;
+    background: Theme.color-bg;
 
     VerticalLayout {
         alignment: center;
+        spacing: Theme.pad-sm;
 
         Text {
-            text: "Select a Hall";
-            color: Theme.text-secondary;
-            font-size: Theme.font-lg;
+            text: "No Hall Selected";
+            color: Theme.color-text-muted;
+            font-size: Theme.text-lg;
             horizontal-alignment: center;
         }
 
         Text {
-            text: "or create a new one to get started";
-            color: Theme.text-muted;
-            font-size: Theme.font-sm;
+            text: "Select a hall from the list or create a new one.";
+            color: Theme.color-text-dim;
+            font-size: Theme.text-sm;
             horizontal-alignment: center;
         }
     }
