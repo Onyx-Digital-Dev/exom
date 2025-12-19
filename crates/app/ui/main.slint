@@ -7,9 +7,9 @@ import { HallsPanel, HallItem } from "halls_panel.slint";
 import { ChatPanel, EmptyChatPanel, MessageItem } from "chat_panel.slint";
 import { MembersPanel, MemberItem, ChestFileItem } from "members_panel.slint";
 import { HallSwitcher, SwitcherHallItem } from "hall_switcher.slint";
-import { WorkspacePanel, Launcher, TabItem, FileItem, LauncherItem } from "workspace_panel.slint";
+import { WorkspacePanel, Launcher, TabItem, FileItem, LauncherItem, LaunchedToolItem, PinnedLauncherItem } from "workspace_panel.slint";
 
-export { HallItem, MessageItem, MemberItem, ChestFileItem, SwitcherHallItem, TabItem, FileItem, LauncherItem }
+export { HallItem, MessageItem, MemberItem, ChestFileItem, SwitcherHallItem, TabItem, FileItem, LauncherItem, LaunchedToolItem, PinnedLauncherItem }
 
 export component MainWindow inherits Window {
     title: "Exom";
@@ -66,11 +66,11 @@ export component MainWindow inherits Window {
 
     // Workspace state
     in-out property <[TabItem]> workspace-tabs: [];
-    in-out property <string> active-tool: "chat";  // "chat", "terminal", "files"
+    in-out property <string> active-tool: "chat";  // "chat", "tools", "files"
 
-    // Terminal state
-    in-out property <string> terminal-output: "";
-    in-out property <bool> terminal-running: true;
+    // Launched Tools state (honest: opens in new window)
+    in-out property <[LaunchedToolItem]> launched-tools: [];
+    in-out property <[PinnedLauncherItem]> pinned-launchers: [];
 
     // Files state
     in-out property <string> files-path: "";
@@ -127,7 +127,8 @@ export component MainWindow inherits Window {
     callback select-tab(string);
     callback close-tab(string);
     callback launcher-select(int);
-    callback terminal-send(string);
+    callback stop-tool(string);         // Stop a launched tool by ID
+    callback launch-pinned(string);     // Launch a pinned launcher by ID
     callback files-navigate(string);
     callback files-open(string);
 
@@ -245,9 +246,9 @@ export component MainWindow inherits Window {
                 messages: root.messages;
                 typing-indicator: root.typing-indicator;
 
-                // Terminal state
-                terminal-output: root.terminal-output;
-                terminal-running: root.terminal-running;
+                // Launched Tools state (honest: opens in new window)
+                launched-tools: root.launched-tools;
+                pinned-launchers: root.pinned-launchers;
 
                 // Files state
                 files-path: root.files-path;
@@ -259,7 +260,8 @@ export component MainWindow inherits Window {
                 send-message(msg) => { root.send-message(msg); }
                 delete-message(id) => { root.delete-message(id); }
                 typing-changed => { root.typing-changed(); }
-                terminal-send(cmd) => { root.terminal-send(cmd); }
+                stop-tool(id) => { root.stop-tool(id); }
+                launch-pinned(id) => { root.launch-pinned(id); }
                 files-navigate(path) => { root.files-navigate(path); }
                 files-open(path) => { root.files-open(path); }
                 step-out => { root.request-step-out(); }

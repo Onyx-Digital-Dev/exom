@@ -239,6 +239,27 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_hall_bot_config_bot ON hall_bot_config(bot_id);
         "#,
     },
+    Migration {
+        version: 9,
+        description: "Add pinned launchers for external tools",
+        sql: r#"
+            -- Pinned launchers per hall (quick-launch buttons)
+            -- Tools open in NEW WINDOWS - no embedding
+            CREATE TABLE IF NOT EXISTS pinned_launchers (
+                id TEXT PRIMARY KEY,
+                hall_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                command TEXT NOT NULL,
+                args TEXT NOT NULL DEFAULT '[]',
+                icon TEXT,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pinned_launchers_hall ON pinned_launchers(hall_id);
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

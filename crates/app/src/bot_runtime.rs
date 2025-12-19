@@ -111,6 +111,65 @@ impl BotRuntime {
                     }
                 }
             }
+            BotAction::SpawnExternalTool {
+                hall_id,
+                tool_id,
+                command,
+                args,
+                cwd: _cwd, // TODO: support working directory
+            } => {
+                // Spawn external tool (opens in NEW WINDOW - not embedded)
+                let mut tools = self.state.tools.lock().unwrap();
+                match tools.launch(
+                    *hall_id,
+                    tool_id.clone(),
+                    command,
+                    args,
+                    Some(bot_id.clone()),
+                ) {
+                    Ok(id) => {
+                        tracing::info!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            tool_id = %tool_id,
+                            spawned_id = %id,
+                            "Bot spawned external tool (new window)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            tool_id = %tool_id,
+                            error = %e,
+                            "Bot failed to spawn external tool"
+                        );
+                    }
+                }
+            }
+            BotAction::StopExternalTool { hall_id, tool_id } => {
+                // Stop a running tool
+                let mut tools = self.state.tools.lock().unwrap();
+                match tools.stop_by_id(tool_id) {
+                    Ok(()) => {
+                        tracing::info!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            tool_id = %tool_id,
+                            "Bot stopped external tool"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            tool_id = %tool_id,
+                            error = %e,
+                            "Bot failed to stop external tool"
+                        );
+                    }
+                }
+            }
             // Other actions not yet implemented
             _ => {
                 tracing::debug!(

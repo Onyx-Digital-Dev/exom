@@ -6,6 +6,7 @@ mod connections;
 mod halls;
 mod invites;
 mod last_seen;
+mod launchers;
 mod messages;
 mod migrations;
 mod parse;
@@ -28,6 +29,7 @@ use tracing::instrument;
 pub use archive::{ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow};
 pub use bot_config::{BotConfigStore, HallBot, HallBotConfig};
 pub use connections::{ConnectionStore, LastConnection};
+pub use launchers::{LauncherStore, PinnedLauncher};
 pub use halls::HallStore;
 pub use invites::InviteStore;
 pub use last_seen::{LastSeen, LastSeenStore};
@@ -126,6 +128,11 @@ impl Database {
     /// Get bot config store for per-hall bot management
     pub fn bot_config(&self) -> BotConfigStore<'_> {
         BotConfigStore::new(&self.conn)
+    }
+
+    /// Get launcher store for pinned launchers (external tools)
+    pub fn launchers(&self) -> LauncherStore<'_> {
+        LauncherStore::new(&self.conn)
     }
 }
 

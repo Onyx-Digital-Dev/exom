@@ -1,20 +1,18 @@
 //! Workspace state and tool management
 //!
-//! Manages workspace tabs, tools (Terminal, Files), and child processes.
+//! Manages workspace tabs and tools (Tools panel shows external processes, Files).
+//! External tools open in NEW WINDOWS - there is no embedding.
 //! All state is hall-scoped and ephemeral (no persistence across restarts).
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::thread;
 use uuid::Uuid;
 
 /// Tool types available in the workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolType {
     Chat,
-    Terminal,
+    /// Launched external tools (opens in NEW WINDOWS - not embedded)
+    Tools,
     Files,
 }
 
@@ -22,7 +20,7 @@ impl ToolType {
     pub fn label(&self) -> &'static str {
         match self {
             ToolType::Chat => "Chat",
-            ToolType::Terminal => "Terminal",
+            ToolType::Tools => "Tools",
             ToolType::Files => "Files",
         }
     }
@@ -36,117 +34,7 @@ pub struct Tab {
     pub title: String,
 }
 
-/// Terminal process state
-pub struct TerminalProcess {
-    #[allow(dead_code)]
-    pub id: Uuid,
-    child: Option<Child>,
-    output_buffer: Arc<Mutex<Vec<String>>>,
-    exit_status: Arc<Mutex<Option<i32>>>,
-}
-
-impl TerminalProcess {
-    /// Spawn a new terminal process
-    pub fn spawn() -> std::io::Result<Self> {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-        let mut child = Command::new(&shell)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let id = Uuid::new_v4();
-        let output_buffer = Arc::new(Mutex::new(Vec::new()));
-        let exit_status = Arc::new(Mutex::new(None));
-
-        // Spawn thread to read stdout
-        if let Some(stdout) = child.stdout.take() {
-            let buffer = output_buffer.clone();
-            thread::spawn(move || {
-                let reader = BufReader::new(stdout);
-                for line in reader.lines().map_while(Result::ok) {
-                    buffer.lock().unwrap().push(line);
-                }
-            });
-        }
-
-        // Spawn thread to read stderr
-        if let Some(stderr) = child.stderr.take() {
-            let buffer = output_buffer.clone();
-            thread::spawn(move || {
-                let reader = BufReader::new(stderr);
-                for line in reader.lines().map_while(Result::ok) {
-                    buffer.lock().unwrap().push(format!("[stderr] {}", line));
-                }
-            });
-        }
-
-        Ok(Self {
-            id,
-            child: Some(child),
-            output_buffer,
-            exit_status,
-        })
-    }
-
-    /// Send input to the terminal
-    pub fn send_input(&mut self, input: &str) -> std::io::Result<()> {
-        if let Some(ref mut child) = self.child {
-            if let Some(ref mut stdin) = child.stdin {
-                writeln!(stdin, "{}", input)?;
-                stdin.flush()?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Get output lines (drains the buffer)
-    pub fn get_output(&self) -> Vec<String> {
-        let mut buffer = self.output_buffer.lock().unwrap();
-        std::mem::take(&mut *buffer)
-    }
-
-    /// Check if process has exited and get status
-    pub fn check_exit(&mut self) -> Option<i32> {
-        if let Some(ref mut child) = self.child {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let code = status.code().unwrap_or(-1);
-                    *self.exit_status.lock().unwrap() = Some(code);
-                    self.child = None;
-                    Some(code)
-                }
-                Ok(None) => None,
-                Err(_) => None,
-            }
-        } else {
-            *self.exit_status.lock().unwrap()
-        }
-    }
-
-    /// Kill the process
-    pub fn kill(&mut self) {
-        if let Some(ref mut child) = self.child {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        self.child = None;
-    }
-
-    /// Check if process is running
-    pub fn is_running(&self) -> bool {
-        self.child.is_some()
-    }
-}
-
-impl Drop for TerminalProcess {
-    fn drop(&mut self) {
-        self.kill();
-    }
-}
-
-/// External process launched from file browser
+/// External process launched from file browser (opens in NEW WINDOW)
 pub struct ExternalProcess {
     #[allow(dead_code)]
     pub id: Uuid,
@@ -269,7 +157,6 @@ pub struct WorkspaceState {
     pub hall_id: Uuid,
     tabs: Vec<Tab>,
     active_tab_id: Option<Uuid>,
-    terminals: HashMap<Uuid, TerminalProcess>,
     external_processes: Vec<ExternalProcess>,
     /// Current path in file browser
     pub files_current_path: std::path::PathBuf,
@@ -295,7 +182,6 @@ impl WorkspaceState {
             hall_id,
             tabs: vec![chat_tab],
             active_tab_id: Some(chat_id),
-            terminals: HashMap::new(),
             external_processes: Vec::new(),
             files_current_path: chest_path,
             files_entries: Vec::new(),
@@ -343,6 +229,14 @@ impl WorkspaceState {
             }
         }
 
+        // For Tools, reuse existing tab if any
+        if tool_type == ToolType::Tools {
+            if let Some(tools_tab) = self.tabs.iter().find(|t| t.tool_type == ToolType::Tools) {
+                self.active_tab_id = Some(tools_tab.id);
+                return tools_tab.id;
+            }
+        }
+
         // Create new tab
         let tab = Tab {
             id: Uuid::new_v4(),
@@ -353,12 +247,8 @@ impl WorkspaceState {
         self.tabs.push(tab);
         self.active_tab_id = Some(tab_id);
 
-        // If terminal, spawn process
-        if tool_type == ToolType::Terminal {
-            if let Ok(process) = TerminalProcess::spawn() {
-                self.terminals.insert(tab_id, process);
-            }
-        }
+        // Tools tab doesn't spawn anything - tools are launched separately
+        // via the ExternalToolRuntime (and open in NEW WINDOWS)
 
         tab_id
     }
@@ -372,11 +262,6 @@ impl WorkspaceState {
             }
         }
 
-        // Kill terminal if any
-        if let Some(mut terminal) = self.terminals.remove(&tab_id) {
-            terminal.kill();
-        }
-
         // Remove tab
         self.tabs.retain(|t| t.id != tab_id);
 
@@ -384,17 +269,6 @@ impl WorkspaceState {
         if self.active_tab_id == Some(tab_id) {
             self.active_tab_id = self.tabs.first().map(|t| t.id);
         }
-    }
-
-    /// Get terminal for a tab
-    #[allow(dead_code)]
-    pub fn get_terminal(&self, tab_id: Uuid) -> Option<&TerminalProcess> {
-        self.terminals.get(&tab_id)
-    }
-
-    /// Get mutable terminal for a tab
-    pub fn get_terminal_mut(&mut self, tab_id: Uuid) -> Option<&mut TerminalProcess> {
-        self.terminals.get_mut(&tab_id)
     }
 
     /// Refresh file listing for current path
@@ -460,7 +334,7 @@ impl WorkspaceState {
         Ok(())
     }
 
-    /// Open a file (text in terminal, media in external app)
+    /// Open a file (opens in external app - NEW WINDOW, not embedded)
     pub fn open_file(&mut self, entry: &FileEntry) -> Option<Uuid> {
         if entry.is_directory {
             // Navigate into directory
@@ -468,21 +342,10 @@ impl WorkspaceState {
             return None;
         }
 
-        if entry.is_text() {
-            // Open in terminal with $EDITOR or cat
-            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "cat".to_string());
-            let tab_id = self.open_tool(ToolType::Terminal);
-            if let Some(terminal) = self.get_terminal_mut(tab_id) {
-                let _ = terminal.send_input(&format!("{} \"{}\"", editor, entry.path.display()));
-            }
-            return Some(tab_id);
-        }
-
-        if entry.is_media() {
-            // Launch external app (xdg-open handles all media types)
-            if let Ok(process) = ExternalProcess::launch("xdg-open", &[entry.path.to_str().unwrap_or("")]) {
-                self.external_processes.push(process);
-            }
+        // All files open externally via xdg-open (opens in NEW WINDOW)
+        // This is honest: we don't embed apps, we launch them
+        if let Ok(process) = ExternalProcess::launch("xdg-open", &[entry.path.to_str().unwrap_or("")]) {
+            self.external_processes.push(process);
         }
 
         None
@@ -495,9 +358,6 @@ impl WorkspaceState {
 
     /// Kill all processes (called on workspace close)
     pub fn kill_all(&mut self) {
-        for (_, mut terminal) in self.terminals.drain() {
-            terminal.kill();
-        }
         for mut process in self.external_processes.drain(..) {
             process.kill();
         }
@@ -517,15 +377,8 @@ impl WorkspaceState {
             })
             .collect();
 
-        // Get terminal cwd if active tab is terminal
-        let terminal_cwd = self.active_tab().and_then(|tab| {
-            if tab.tool_type == ToolType::Terminal {
-                // For now, use the files path as cwd hint
-                Some(self.files_current_path.display().to_string())
-            } else {
-                None
-            }
-        });
+        // Store files path for restoration
+        let terminal_cwd = Some(self.files_current_path.display().to_string());
 
         exom_core::PersistedWorkspace {
             hall_id: self.hall_id,
@@ -545,7 +398,7 @@ impl WorkspaceState {
         for ptab in &persisted.tabs {
             let tool_type = match ptab.tool_type.as_str() {
                 "Chat" => continue, // Already have Chat
-                "Terminal" => ToolType::Terminal,
+                "Tools" | "Terminal" => ToolType::Tools, // Handle legacy "Terminal"
                 "Files" => ToolType::Files,
                 _ => continue,
             };
@@ -554,20 +407,9 @@ impl WorkspaceState {
             let tab = Tab {
                 id: tab_id,
                 tool_type,
-                title: ptab.title.clone(),
+                title: if tool_type == ToolType::Tools { "Tools".to_string() } else { ptab.title.clone() },
             };
             self.tabs.push(tab);
-
-            // Spawn terminal process for Terminal tabs
-            if tool_type == ToolType::Terminal {
-                if let Ok(mut process) = TerminalProcess::spawn() {
-                    // If we have a cwd hint, try to cd there
-                    if let Some(ref cwd) = persisted.terminal_cwd {
-                        let _ = process.send_input(&format!("cd {}", cwd));
-                    }
-                    self.terminals.insert(tab_id, process);
-                }
-            }
         }
 
         // Restore active tab
@@ -579,7 +421,7 @@ impl WorkspaceState {
             }
         }
 
-        // Restore terminal cwd for file browsing
+        // Restore files path for file browsing
         if let Some(ref cwd) = persisted.terminal_cwd {
             let path = std::path::PathBuf::from(cwd);
             if path.exists() {
@@ -599,7 +441,8 @@ impl Drop for WorkspaceState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
 pub enum LauncherAction {
-    OpenTerminal,
+    /// Open Launched Tools panel (external tools open in NEW WINDOWS)
+    OpenTools,
     OpenFiles,
     OpenChat,
 }
@@ -607,7 +450,7 @@ pub enum LauncherAction {
 impl LauncherAction {
     pub fn label(&self) -> &'static str {
         match self {
-            LauncherAction::OpenTerminal => "Open Terminal",
+            LauncherAction::OpenTools => "Launched Tools (new window)",
             LauncherAction::OpenFiles => "Open Hall Chest (Files)",
             LauncherAction::OpenChat => "Open Chat",
         }
@@ -615,7 +458,7 @@ impl LauncherAction {
 
     pub fn to_tool_type(self) -> ToolType {
         match self {
-            LauncherAction::OpenTerminal => ToolType::Terminal,
+            LauncherAction::OpenTools => ToolType::Tools,
             LauncherAction::OpenFiles => ToolType::Files,
             LauncherAction::OpenChat => ToolType::Chat,
         }
@@ -624,7 +467,7 @@ impl LauncherAction {
 
 /// All available launcher actions
 pub const LAUNCHER_ACTIONS: &[LauncherAction] = &[
-    LauncherAction::OpenTerminal,
+    LauncherAction::OpenTools,
     LauncherAction::OpenFiles,
     LauncherAction::OpenChat,
 ];
@@ -637,20 +480,20 @@ mod tests {
     #[test]
     fn test_tool_type_labels() {
         assert_eq!(ToolType::Chat.label(), "Chat");
-        assert_eq!(ToolType::Terminal.label(), "Terminal");
+        assert_eq!(ToolType::Tools.label(), "Tools");
         assert_eq!(ToolType::Files.label(), "Files");
     }
 
     #[test]
     fn test_launcher_action_labels() {
-        assert_eq!(LauncherAction::OpenTerminal.label(), "Open Terminal");
+        assert_eq!(LauncherAction::OpenTools.label(), "Launched Tools (new window)");
         assert_eq!(LauncherAction::OpenFiles.label(), "Open Hall Chest (Files)");
         assert_eq!(LauncherAction::OpenChat.label(), "Open Chat");
     }
 
     #[test]
     fn test_launcher_action_to_tool_type() {
-        assert_eq!(LauncherAction::OpenTerminal.to_tool_type(), ToolType::Terminal);
+        assert_eq!(LauncherAction::OpenTools.to_tool_type(), ToolType::Tools);
         assert_eq!(LauncherAction::OpenFiles.to_tool_type(), ToolType::Files);
         assert_eq!(LauncherAction::OpenChat.to_tool_type(), ToolType::Chat);
     }

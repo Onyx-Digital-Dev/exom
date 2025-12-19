@@ -26,10 +26,27 @@ export struct LauncherItem {
     label: string,
 }
 
+// Launched tool data (external processes opened in NEW WINDOWS)
+export struct LaunchedToolItem {
+    id: string,
+    name: string,
+    command: string,
+    status: string,  // "Running", "Exited", "Stopped", "Failed"
+    pid: string,
+    launched-by: string,  // Bot name or empty for user
+}
+
+// Pinned launcher data (quick-launch buttons)
+export struct PinnedLauncherItem {
+    id: string,
+    name: string,
+    icon: string,
+}
+
 export component WorkspacePanel inherits Rectangle {
     // Tab state
     in property <[TabItem]> tabs: [];
-    in property <string> active-tool: "chat";  // "chat", "terminal", "files"
+    in property <string> active-tool: "chat";  // "chat", "tools", "files"
 
     // Chat state (passed through)
     in property <string> hall-name;
@@ -38,9 +55,9 @@ export component WorkspacePanel inherits Rectangle {
     in property <[MessageItem]> messages: [];
     in property <string> typing-indicator;
 
-    // Terminal state
-    in property <string> terminal-output: "";
-    in property <bool> terminal-running: true;
+    // Launched Tools state (honest: opens in new window)
+    in property <[LaunchedToolItem]> launched-tools: [];
+    in property <[PinnedLauncherItem]> pinned-launchers: [];
 
     // Files state
     in property <string> files-path: "";
@@ -52,7 +69,8 @@ export component WorkspacePanel inherits Rectangle {
     callback send-message(string);
     callback delete-message(string);
     callback typing-changed();
-    callback terminal-send(string);
+    callback stop-tool(string);          // Stop a launched tool by ID
+    callback launch-pinned(string);      // Launch a pinned launcher by ID
     callback files-navigate(string);
     callback files-open(string);
     callback step-out();  // K4: Softer "leave hall"
@@ -163,30 +181,176 @@ export component WorkspacePanel inherits Rectangle {
                 typing-changed => { root.typing-changed(); }
             }
 
-            // Terminal view
-            if root.active-tool == "terminal": VerticalLayout {
-                // Output area
-                Flickable {
-                    vertical-stretch: 1;
+            // Tools view - Launched external tools (opens in NEW WINDOWS)
+            if root.active-tool == "tools": VerticalLayout {
+                // Header with honest labeling
+                Rectangle {
+                    height: 48px;
+                    background: Theme.color-panel;
 
-                    Rectangle {
-                        background: Theme.color-bg;
+                    VerticalLayout {
+                        padding-left: Theme.pad-md;
+                        padding-right: Theme.pad-md;
+                        spacing: 2px;
 
                         Text {
-                            x: Theme.pad-sm;
-                            y: Theme.pad-sm;
-                            width: parent.width - Theme.pad-md;
-                            text: root.terminal-output;
+                            text: "Launched Tools";
                             color: Theme.color-text;
-                            font-size: Theme.text-sm;
-                            wrap: word-wrap;
+                            font-size: Theme.text-md;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+
+                        Text {
+                            text: "Opens in new window (not embedded)";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-xs;
+                            vertical-alignment: center;
                         }
                     }
                 }
 
                 Separator {}
 
-                // Status bar
+                // Pinned launchers (quick-launch buttons)
+                if root.pinned-launchers.length > 0: Rectangle {
+                    height: 48px;
+                    background: Theme.color-panel-elevated;
+
+                    HorizontalLayout {
+                        padding-left: Theme.pad-sm;
+                        padding-right: Theme.pad-sm;
+                        spacing: Theme.pad-sm;
+                        alignment: start;
+
+                        for launcher in root.pinned-launchers: Rectangle {
+                            width: 80px;
+                            height: 36px;
+                            background: launcher-touch.has-hover ? Theme.color-panel-hover : Theme.color-panel;
+                            border-radius: Theme.radius-sm;
+                            border-color: Theme.color-border;
+                            border-width: Theme.border-width;
+
+                            launcher-touch := TouchArea {
+                                clicked => { root.launch-pinned(launcher.id); }
+                            }
+
+                            Text {
+                                text: launcher.name;
+                                color: Theme.color-text;
+                                font-size: Theme.text-sm;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                if root.pinned-launchers.length > 0: Separator {}
+
+                // Launched tools list
+                Flickable {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        padding: Theme.pad-sm;
+                        spacing: Theme.pad-xs;
+
+                        if root.launched-tools.length == 0: EmptyState {
+                            title: "No tools launched";
+                            description: "Use Ctrl+Space to launch a tool,\nor use pinned launchers above.";
+                        }
+
+                        for tool in root.launched-tools: Rectangle {
+                            height: 56px;
+                            background: tool-area.has-hover ? Theme.color-panel-hover : Theme.color-panel;
+                            border-radius: Theme.radius-sm;
+
+                            tool-area := TouchArea {}
+
+                            HorizontalLayout {
+                                padding-left: Theme.pad-md;
+                                padding-right: Theme.pad-md;
+                                spacing: Theme.pad-md;
+
+                                // Status indicator
+                                VerticalLayout {
+                                    alignment: center;
+
+                                    Rectangle {
+                                        width: 8px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        background: tool.status == "Running" ? Theme.color-online :
+                                                    (tool.status == "Exited" ? Theme.color-text-dim :
+                                                    (tool.status == "Stopped" ? Theme.color-text-muted :
+                                                    Theme.color-text-dim));
+                                    }
+                                }
+
+                                // Tool info
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 2px;
+
+                                    HorizontalLayout {
+                                        spacing: Theme.pad-sm;
+
+                                        Text {
+                                            text: tool.name;
+                                            color: Theme.color-text;
+                                            font-size: Theme.text-sm;
+                                            font-weight: 500;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Text {
+                                            text: tool.status;
+                                            color: tool.status == "Running" ? Theme.color-online : Theme.color-text-dim;
+                                            font-size: Theme.text-xs;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: Theme.pad-sm;
+
+                                        Text {
+                                            text: tool.command;
+                                            color: Theme.color-text-muted;
+                                            font-size: Theme.text-xs;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                        }
+
+                                        if tool.pid != "": Text {
+                                            text: "PID: " + tool.pid;
+                                            color: Theme.color-text-dim;
+                                            font-size: Theme.text-xs;
+                                            vertical-alignment: center;
+                                        }
+
+                                        if tool.launched-by != "": Text {
+                                            text: "by " + tool.launched-by;
+                                            color: Theme.color-text-dim;
+                                            font-size: Theme.text-xs;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+
+                                // Stop button (only for running tools)
+                                if tool.status == "Running": SecondaryButton {
+                                    label: "Stop";
+                                    clicked => { root.stop-tool(tool.id); }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Footer with info
                 Rectangle {
                     height: 24px;
                     background: Theme.color-panel;
@@ -196,51 +360,12 @@ export component WorkspacePanel inherits Rectangle {
                         padding-right: Theme.pad-sm;
 
                         Text {
-                            text: root.terminal-running ? "Running" : "Exited";
-                            color: root.terminal-running ? Theme.color-online : Theme.color-text-dim;
+                            text: root.launched-tools.length > 0 ?
+                                  root.launched-tools.length + " tool(s) tracked" :
+                                  "Ctrl+Space to launch";
+                            color: Theme.color-text-dim;
                             font-size: Theme.text-xs;
                             vertical-alignment: center;
-                        }
-                    }
-                }
-
-                // Input area
-                Rectangle {
-                    height: 40px;
-                    background: Theme.color-panel;
-
-                    HorizontalLayout {
-                        padding: Theme.pad-xs;
-                        spacing: Theme.pad-xs;
-
-                        Text {
-                            text: "$";
-                            color: Theme.color-accent;
-                            font-size: Theme.text-md;
-                            vertical-alignment: center;
-                        }
-
-                        terminal-input := TextField {
-                            horizontal-stretch: 1;
-                            placeholder: "Enter command...";
-                            enabled: root.terminal-running;
-                            accepted => {
-                                if self.text != "" {
-                                    root.terminal-send(self.text);
-                                    self.clear();
-                                }
-                            }
-                        }
-
-                        SecondaryButton {
-                            label: "Send";
-                            enabled: root.terminal-running;
-                            clicked => {
-                                if terminal-input.text != "" {
-                                    root.terminal-send(terminal-input.text);
-                                    terminal-input.clear();
-                                }
-                            }
                         }
                     }
                 }
@@ -351,10 +476,9 @@ export component WorkspacePanel inherits Rectangle {
         }
     }
 
-    // Focus terminal input when switching to terminal
+    // Focus handler for chat input
     public function focus-chat-input() {
-        // This would focus the chat input in the embedded ChatPanel
-        // but we can't easily access it - the chat panel handles its own focus
+        // The chat panel handles its own focus internally
     }
 }
 

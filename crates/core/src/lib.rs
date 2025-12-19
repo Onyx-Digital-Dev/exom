@@ -26,6 +26,6 @@ pub use permissions::*;
 pub use storage::{
     ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow, BotConfigStore, Database,
     HallBot, HallBotConfig, HallRepository, InviteRepository, LastConnection, LastSeen,
-    LastSeenStore, MessageRepository, PersistedTab, PersistedWorkspace, PreferencesStore, Storage,
-    UserPreferences, UserRepository, WorkspaceStore,
+    LastSeenStore, LauncherStore, MessageRepository, PersistedTab, PersistedWorkspace,
+    PinnedLauncher, PreferencesStore, Storage, UserPreferences, UserRepository, WorkspaceStore,
 };

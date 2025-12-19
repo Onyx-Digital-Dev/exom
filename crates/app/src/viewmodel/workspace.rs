@@ -6,9 +6,10 @@ use exom_net::CurrentTool;
 use slint::{ComponentHandle, ModelRc, VecModel};
 use uuid::Uuid;
 
+use crate::external_tools::ToolSnapshot;
 use crate::state::AppState;
 use crate::workspace::{LauncherAction, ToolType, WorkspaceState, LAUNCHER_ACTIONS};
-use crate::{FileItem, LauncherItem, MainWindow, TabItem};
+use crate::{FileItem, LaunchedToolItem, LauncherItem, MainWindow, PinnedLauncherItem, TabItem};
 
 /// Workspace manager - holds per-hall workspace state
 pub struct WorkspaceManager {
@@ -169,7 +170,7 @@ pub fn setup_workspace_bindings(
         };
 
         let action = match action_id {
-            0 => LauncherAction::OpenTerminal,
+            0 => LauncherAction::OpenTools,
             1 => LauncherAction::OpenFiles,
             2 => LauncherAction::OpenChat,
             _ => return,
@@ -183,32 +184,64 @@ pub fn setup_workspace_bindings(
             window.set_show_launcher(false);
             refresh_tabs(&window, workspace);
             refresh_workspace_view(&window, workspace);
+            // Also refresh tools when switching to Tools tab
+            if action == LauncherAction::OpenTools {
+                refresh_launched_tools(&window, &state_clone, hall_id);
+                refresh_pinned_launchers(&window, &state_clone, hall_id);
+            }
         }
     });
 
-    // Set up terminal input callback
+    // Set up stop tool callback
+    let state_clone = state.clone();
+    window.on_stop_tool(move |tool_id_str| {
+        let mut tools = state_clone.tools.lock().unwrap();
+        if let Err(e) = tools.stop_by_id(&tool_id_str) {
+            tracing::warn!(error = %e, "Failed to stop tool");
+        }
+    });
+
+    // Set up launch pinned callback
     let window_weak = window.as_weak();
     let state_clone = state.clone();
-    let wm = workspace_manager.clone();
-    window.on_terminal_send(move |input| {
+    window.on_launch_pinned(move |launcher_id_str| {
         let hall_id = match state_clone.current_hall_id() {
             Some(id) => id,
             None => return,
         };
 
-        let mut wm = wm.lock().unwrap();
-        if let Some(workspace) = wm.get_mut(hall_id) {
-            if let Some(tab) = workspace.active_tab() {
-                if tab.tool_type == ToolType::Terminal {
-                    if let Some(terminal) = workspace.get_terminal_mut(tab.id) {
-                        let _ = terminal.send_input(&input);
-                    }
-                }
+        // Parse the launcher ID
+        let launcher_id = match Uuid::parse_str(&launcher_id_str) {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+
+        // Get the launcher from storage
+        let launcher = match state_clone.db.lock().unwrap().launchers().get(launcher_id) {
+            Ok(Some(l)) => l,
+            _ => return,
+        };
+
+        // Launch the tool
+        let mut tools = state_clone.tools.lock().unwrap();
+        match tools.launch(
+            hall_id,
+            launcher.name.clone(),
+            &launcher.command,
+            &launcher.args,
+            None, // Launched by user
+        ) {
+            Ok(id) => {
+                tracing::info!(tool_id = %id, "User launched pinned tool");
             }
-            // Refresh terminal output
-            if let Some(window) = window_weak.upgrade() {
-                refresh_terminal_output(&window, workspace);
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to launch pinned tool");
             }
+        }
+
+        // Refresh the launched tools display
+        if let Some(window) = window_weak.upgrade() {
+            refresh_launched_tools(&window, &state_clone, hall_id);
         }
     });
 
@@ -258,14 +291,14 @@ pub fn setup_workspace_bindings(
         }
     });
 
-    // Set up timer for terminal output polling
+    // Set up timer for tool status polling
     let window_weak = window.as_weak();
     let state_clone = state.clone();
     let wm = workspace_manager.clone();
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
-        std::time::Duration::from_millis(100),
+        std::time::Duration::from_millis(500), // Check every 500ms
         move || {
             let hall_id = match state_clone.current_hall_id() {
                 Some(id) => id,
@@ -274,11 +307,11 @@ pub fn setup_workspace_bindings(
 
             let mut wm = wm.lock().unwrap();
             if let Some(workspace) = wm.get_mut(hall_id) {
-                // Check for terminal output
+                // Check if we're viewing the Tools tab
                 let active_tool = workspace.active_tab().map(|t| t.tool_type);
-                if active_tool == Some(ToolType::Terminal) {
+                if active_tool == Some(ToolType::Tools) {
                     if let Some(window) = window_weak.upgrade() {
-                        refresh_terminal_output(&window, workspace);
+                        refresh_launched_tools(&window, &state_clone, hall_id);
                     }
                 }
 
@@ -314,11 +347,15 @@ pub fn init_workspace_for_hall(
     if let Some(tab) = workspace.active_tab() {
         let tool = match tab.tool_type {
             ToolType::Chat => CurrentTool::Chat,
-            ToolType::Terminal => CurrentTool::Terminal,
+            ToolType::Tools => CurrentTool::Terminal, // Map Tools to Terminal for network compat
             ToolType::Files => CurrentTool::Files,
         };
         state.set_local_tool(tool);
     }
+
+    // Refresh launched tools and pinned launchers
+    refresh_launched_tools(window, state, hall_id);
+    refresh_pinned_launchers(window, state, hall_id);
 
     // Save last hall for auto-enter (K4)
     state.save_last_hall(hall_id);
@@ -355,41 +392,53 @@ fn refresh_workspace_view(window: &MainWindow, workspace: &WorkspaceState) {
     if let Some(tab) = workspace.active_tab() {
         window.set_active_tool(match tab.tool_type {
             ToolType::Chat => "chat".into(),
-            ToolType::Terminal => "terminal".into(),
+            ToolType::Tools => "tools".into(),
             ToolType::Files => "files".into(),
         });
     }
 }
 
-/// Refresh terminal output
-fn refresh_terminal_output(window: &MainWindow, workspace: &mut WorkspaceState) {
-    if let Some(tab) = workspace.active_tab() {
-        if tab.tool_type == ToolType::Terminal {
-            if let Some(terminal) = workspace.get_terminal_mut(tab.id) {
-                let new_output = terminal.get_output();
-                if !new_output.is_empty() {
-                    // Append to existing output
-                    let mut current = window.get_terminal_output().to_string();
-                    for line in new_output {
-                        if !current.is_empty() {
-                            current.push('\n');
-                        }
-                        current.push_str(&line);
-                    }
-                    window.set_terminal_output(current.into());
-                }
+/// Refresh launched tools list
+fn refresh_launched_tools(window: &MainWindow, state: &AppState, hall_id: Uuid) {
+    let mut tools_runtime = state.tools.lock().unwrap();
+    let snapshots = tools_runtime.list_for_hall(hall_id);
 
-                // Check exit status
-                if let Some(code) = terminal.check_exit() {
-                    let mut current = window.get_terminal_output().to_string();
-                    current.push_str(&format!("\n[Process exited with code {}]", code));
-                    window.set_terminal_output(current.into());
-                    window.set_terminal_running(false);
-                } else {
-                    window.set_terminal_running(terminal.is_running());
-                }
-            }
-        }
+    let items: Vec<LaunchedToolItem> = snapshots
+        .iter()
+        .map(|t| snapshot_to_item(t))
+        .collect();
+
+    window.set_launched_tools(ModelRc::new(VecModel::from(items)));
+}
+
+/// Refresh pinned launchers list
+fn refresh_pinned_launchers(window: &MainWindow, state: &AppState, hall_id: Uuid) {
+    let launchers = match state.db.lock().unwrap().launchers().list_for_hall(hall_id) {
+        Ok(l) => l,
+        Err(_) => Vec::new(),
+    };
+
+    let items: Vec<PinnedLauncherItem> = launchers
+        .iter()
+        .map(|l| PinnedLauncherItem {
+            id: l.id.to_string().into(),
+            name: l.name.clone().into(),
+            icon: l.icon.clone().unwrap_or_default().into(),
+        })
+        .collect();
+
+    window.set_pinned_launchers(ModelRc::new(VecModel::from(items)));
+}
+
+/// Convert a ToolSnapshot to a LaunchedToolItem for the UI
+fn snapshot_to_item(t: &ToolSnapshot) -> LaunchedToolItem {
+    LaunchedToolItem {
+        id: t.id.to_string().into(),
+        name: t.name.clone().into(),
+        command: t.command.clone().into(),
+        status: t.status.as_str().into(),
+        pid: t.pid.map(|p| p.to_string()).unwrap_or_default().into(),
+        launched_by: t.launched_by.clone().unwrap_or_default().into(),
     }
 }
 

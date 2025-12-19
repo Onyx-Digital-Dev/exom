@@ -9,6 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod archivist;
 mod bot_runtime;
+mod external_tools;
 mod network;
 mod platform;
 mod state;

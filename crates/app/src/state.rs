@@ -11,6 +11,8 @@ use exom_core::{Database, Error, HallChest, Result};
 use exom_net::{CurrentTool, PresenceStatus};
 use uuid::Uuid;
 
+use crate::external_tools::{ExternalToolRuntime, SharedToolRuntime};
+
 /// Ephemeral system message (not persisted)
 #[derive(Debug, Clone)]
 pub struct SystemMessage {
@@ -61,6 +63,8 @@ pub struct AppState {
     pub local_current_tool: Arc<Mutex<CurrentTool>>,
     /// Local user's presence status
     pub local_presence: Arc<Mutex<PresenceStatus>>,
+    /// External tools runtime (spawned processes per hall)
+    pub tools: SharedToolRuntime,
 }
 
 impl AppState {
@@ -90,6 +94,7 @@ impl AppState {
             last_local_activity: Arc::new(Mutex::new(Instant::now())),
             local_current_tool: Arc::new(Mutex::new(CurrentTool::Chat)),
             local_presence: Arc::new(Mutex::new(PresenceStatus::Active)),
+            tools: Arc::new(Mutex::new(ExternalToolRuntime::new())),
         })
     }
 
