@@ -7,8 +7,9 @@ import { HallsPanel, HallItem } from "halls_panel.slint";
 import { ChatPanel, EmptyChatPanel, MessageItem } from "chat_panel.slint";
 import { MembersPanel, MemberItem, ChestFileItem } from "members_panel.slint";
 import { HallSwitcher, SwitcherHallItem } from "hall_switcher.slint";
+import { WorkspacePanel, Launcher, TabItem, FileItem, LauncherItem } from "workspace_panel.slint";
 
-export { HallItem, MessageItem, MemberItem, ChestFileItem, SwitcherHallItem }
+export { HallItem, MessageItem, MemberItem, ChestFileItem, SwitcherHallItem, TabItem, FileItem, LauncherItem }
 
 export component MainWindow inherits Window {
     title: "Exom";
@@ -63,6 +64,22 @@ export component MainWindow inherits Window {
     // Typing indicator
     in-out property <string> typing-indicator: "";
 
+    // Workspace state
+    in-out property <[TabItem]> workspace-tabs: [];
+    in-out property <string> active-tool: "chat";  // "chat", "terminal", "files"
+
+    // Terminal state
+    in-out property <string> terminal-output: "";
+    in-out property <bool> terminal-running: true;
+
+    // Files state
+    in-out property <string> files-path: "";
+    in-out property <[FileItem]> files-entries: [];
+
+    // Launcher state
+    in-out property <[LauncherItem]> launcher-items: [];
+    in-out property <bool> show-launcher: false;
+
     // Switcher filtering callback
     callback filter-switcher-halls(string);
 
@@ -97,6 +114,14 @@ export component MainWindow inherits Window {
 
     // Chest callbacks
     callback load-chest-files();
+
+    // Workspace callbacks
+    callback select-tab(string);
+    callback close-tab(string);
+    callback launcher-select(int);
+    callback terminal-send(string);
+    callback files-navigate(string);
+    callback files-open(string);
 
     // Auth view (visible when not logged in)
     AuthView {
@@ -189,8 +214,6 @@ export component MainWindow inherits Window {
                 keyboard-selected-index: root.selected-hall-index;
                 select-hall(id) => {
                     root.select-hall(id);
-                    // Focus chat input after selecting hall
-                    chat-panel.focus-input();
                 }
                 create-hall(name) => { root.create-hall(name); }
                 join-with-invite(token) => { root.join-with-invite(token); }
@@ -198,18 +221,39 @@ export component MainWindow inherits Window {
 
             VerticalSeparator {}
 
-            // Center panel - Chat (always present for focus management)
-            chat-panel := ChatPanel {
+            // Center panel - Workspace (replaces ChatPanel)
+            workspace-panel := WorkspacePanel {
                 horizontal-stretch: 1;
                 visible: root.current-hall-id != "";
+
+                // Tab state
+                tabs: root.workspace-tabs;
+                active-tool: root.active-tool;
+
+                // Chat state (passed through)
                 hall-name: root.current-hall-name;
                 host-name: root.current-host-name;
                 user-role: root.current-user-role;
                 messages: root.messages;
                 typing-indicator: root.typing-indicator;
+
+                // Terminal state
+                terminal-output: root.terminal-output;
+                terminal-running: root.terminal-running;
+
+                // Files state
+                files-path: root.files-path;
+                files-entries: root.files-entries;
+
+                // Callbacks
+                select-tab(id) => { root.select-tab(id); }
+                close-tab(id) => { root.close-tab(id); }
                 send-message(msg) => { root.send-message(msg); }
                 delete-message(id) => { root.delete-message(id); }
                 typing-changed => { root.typing-changed(); }
+                terminal-send(cmd) => { root.terminal-send(cmd); }
+                files-navigate(path) => { root.files-navigate(path); }
+                files-open(path) => { root.files-open(path); }
             }
 
             EmptyChatPanel {
@@ -252,6 +296,13 @@ export component MainWindow inherits Window {
         // Global keyboard handling (OSV-first: Alt/Ctrl/Shift/Esc only)
         FocusScope {
             key-pressed(event) => {
+                // Ctrl+Space: Open launcher
+                if event.modifiers.control && event.text == " " {
+                    if root.current-hall-id != "" {
+                        root.show-launcher = true;
+                    }
+                    return accept;
+                }
                 // Alt+X: Open hall switcher
                 if event.modifiers.alt && event.text == "x" {
                     root.show-switcher = true;
@@ -283,22 +334,18 @@ export component MainWindow inherits Window {
                 if event.modifiers.alt && event.text == Key.Return {
                     if root.selected-hall-index >= 0 && root.selected-hall-index < root.halls.length {
                         root.select-hall(root.halls[root.selected-hall-index].id);
-                        chat-panel.focus-input();
                     }
                     return accept;
                 }
-                // Esc: Close any open modal and return focus to chat
+                // Esc: Close any open modal
                 if event.text == Key.Escape {
-                    if root.show-switcher {
-                        root.show-switcher = false;
-                        if root.current-hall-id != "" {
-                            chat-panel.focus-input();
-                        }
+                    if root.show-launcher {
+                        root.show-launcher = false;
                         return accept;
                     }
-                    // Always focus chat on Esc
-                    if root.current-hall-id != "" {
-                        chat-panel.focus-input();
+                    if root.show-switcher {
+                        root.show-switcher = false;
+                        return accept;
                     }
                     return accept;
                 }
@@ -313,18 +360,24 @@ export component MainWindow inherits Window {
             search-text <=> root.switcher-search-text;
             select-hall(id) => {
                 root.select-hall(id);
-                // Focus chat input after selecting hall
-                chat-panel.focus-input();
             }
             close-requested => {
                 root.show-switcher = false;
-                // Return focus to chat if hall is open
-                if root.current-hall-id != "" {
-                    chat-panel.focus-input();
-                }
             }
             search-changed(text) => {
                 root.filter-switcher-halls(text);
+            }
+        }
+
+        // Launcher overlay (Ctrl+Space)
+        Launcher {
+            items: root.launcher-items;
+            show: root.show-launcher;
+            select(id) => {
+                root.launcher-select(id);
+            }
+            close-requested => {
+                root.show-launcher = false;
             }
         }
     }

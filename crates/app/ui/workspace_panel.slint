@@ -1,0 +1,470 @@
+// Workspace Panel - Tabbed container for Chat, Terminal, Files
+
+import { Theme } from "theme.slint";
+import { Separator, TextField, Button, SecondaryButton, EmptyState } from "components.slint";
+import { ChatPanel, MessageItem } from "chat_panel.slint";
+
+// Tab item data
+export struct TabItem {
+    id: string,
+    label: string,
+    is-active: bool,
+    is-closable: bool,
+}
+
+// File item data
+export struct FileItem {
+    name: string,
+    path: string,
+    is-directory: bool,
+    size: string,
+}
+
+// Launcher item data
+export struct LauncherItem {
+    id: int,
+    label: string,
+}
+
+export component WorkspacePanel inherits Rectangle {
+    // Tab state
+    in property <[TabItem]> tabs: [];
+    in property <string> active-tool: "chat";  // "chat", "terminal", "files"
+
+    // Chat state (passed through)
+    in property <string> hall-name;
+    in property <string> host-name;
+    in property <string> user-role;
+    in property <[MessageItem]> messages: [];
+    in property <string> typing-indicator;
+
+    // Terminal state
+    in property <string> terminal-output: "";
+    in property <bool> terminal-running: true;
+
+    // Files state
+    in property <string> files-path: "";
+    in property <[FileItem]> files-entries: [];
+
+    // Callbacks
+    callback select-tab(string);
+    callback close-tab(string);
+    callback send-message(string);
+    callback delete-message(string);
+    callback typing-changed();
+    callback terminal-send(string);
+    callback files-navigate(string);
+    callback files-open(string);
+
+    background: Theme.color-bg;
+
+    VerticalLayout {
+        // Tab bar
+        Rectangle {
+            height: 32px;
+            background: Theme.color-panel;
+
+            HorizontalLayout {
+                padding-left: Theme.pad-sm;
+                padding-right: Theme.pad-sm;
+                spacing: 2px;
+
+                for tab in root.tabs: Rectangle {
+                    min-width: 60px;
+                    max-width: 150px;
+                    height: 28px;
+                    background: tab.is-active ? Theme.color-panel-elevated :
+                                (tab-touch.has-hover ? Theme.color-panel-hover : transparent);
+                    border-radius: Theme.radius-sm;
+
+                    tab-touch := TouchArea {
+                        clicked => { root.select-tab(tab.id); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.pad-sm;
+                        padding-right: Theme.pad-xs;
+                        spacing: Theme.pad-xs;
+
+                        Text {
+                            text: tab.label;
+                            color: tab.is-active ? Theme.color-text : Theme.color-text-muted;
+                            font-size: Theme.text-sm;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        // Close button (only for closable tabs)
+                        if tab.is-closable: Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            background: close-touch.has-hover ? Theme.color-panel-hover : transparent;
+                            border-radius: 2px;
+
+                            close-touch := TouchArea {
+                                clicked => { root.close-tab(tab.id); }
+                            }
+
+                            Text {
+                                text: "x";
+                                color: Theme.color-text-dim;
+                                font-size: Theme.text-xs;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // Spacer
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        Separator {}
+
+        // Tool content area
+        Rectangle {
+            vertical-stretch: 1;
+
+            // Chat view
+            if root.active-tool == "chat": ChatPanel {
+                hall-name: root.hall-name;
+                host-name: root.host-name;
+                user-role: root.user-role;
+                messages: root.messages;
+                typing-indicator: root.typing-indicator;
+                send-message(msg) => { root.send-message(msg); }
+                delete-message(id) => { root.delete-message(id); }
+                typing-changed => { root.typing-changed(); }
+            }
+
+            // Terminal view
+            if root.active-tool == "terminal": VerticalLayout {
+                // Output area
+                Flickable {
+                    vertical-stretch: 1;
+
+                    Rectangle {
+                        background: Theme.color-bg;
+
+                        Text {
+                            x: Theme.pad-sm;
+                            y: Theme.pad-sm;
+                            width: parent.width - Theme.pad-md;
+                            text: root.terminal-output;
+                            color: Theme.color-text;
+                            font-size: Theme.text-sm;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                Separator {}
+
+                // Status bar
+                Rectangle {
+                    height: 24px;
+                    background: Theme.color-panel;
+
+                    HorizontalLayout {
+                        padding-left: Theme.pad-sm;
+                        padding-right: Theme.pad-sm;
+
+                        Text {
+                            text: root.terminal-running ? "Running" : "Exited";
+                            color: root.terminal-running ? Theme.color-online : Theme.color-text-dim;
+                            font-size: Theme.text-xs;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Input area
+                Rectangle {
+                    height: 40px;
+                    background: Theme.color-panel;
+
+                    HorizontalLayout {
+                        padding: Theme.pad-xs;
+                        spacing: Theme.pad-xs;
+
+                        Text {
+                            text: "$";
+                            color: Theme.color-accent;
+                            font-size: Theme.text-md;
+                            vertical-alignment: center;
+                        }
+
+                        terminal-input := TextField {
+                            horizontal-stretch: 1;
+                            placeholder: "Enter command...";
+                            enabled: root.terminal-running;
+                            accepted => {
+                                if self.text != "" {
+                                    root.terminal-send(self.text);
+                                    self.clear();
+                                }
+                            }
+                        }
+
+                        SecondaryButton {
+                            label: "Send";
+                            enabled: root.terminal-running;
+                            clicked => {
+                                if terminal-input.text != "" {
+                                    root.terminal-send(terminal-input.text);
+                                    terminal-input.clear();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Files view
+            if root.active-tool == "files": VerticalLayout {
+                // Header with path
+                Rectangle {
+                    height: 36px;
+                    background: Theme.color-panel;
+
+                    HorizontalLayout {
+                        padding-left: Theme.pad-sm;
+                        padding-right: Theme.pad-sm;
+
+                        Text {
+                            text: root.files-path;
+                            color: Theme.color-text-muted;
+                            font-size: Theme.text-sm;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+
+                Separator {}
+
+                // Warning banner
+                Rectangle {
+                    height: 24px;
+                    background: Theme.color-panel-elevated;
+
+                    Text {
+                        x: Theme.pad-sm;
+                        text: "Local only - no sync";
+                        color: Theme.color-text-dim;
+                        font-size: Theme.text-xs;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Separator {}
+
+                // File list
+                Flickable {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        padding: Theme.pad-xs;
+                        spacing: 1px;
+
+                        if root.files-entries.length == 0: EmptyState {
+                            title: "Empty";
+                            description: "No files in this directory.";
+                            vertical-stretch: 1;
+                        }
+
+                        for file in root.files-entries: Rectangle {
+                            height: 32px;
+                            background: file-touch.has-hover ? Theme.color-panel-hover : transparent;
+                            border-radius: Theme.radius-sm;
+
+                            file-touch := TouchArea {
+                                double-clicked => { root.files-open(file.path); }
+                                clicked => {
+                                    if file.is-directory {
+                                        root.files-navigate(file.path);
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: Theme.pad-sm;
+                                padding-right: Theme.pad-sm;
+                                spacing: Theme.pad-sm;
+
+                                // Icon placeholder
+                                Text {
+                                    width: 24px;
+                                    text: file.is-directory ? "[D]" : "[F]";
+                                    color: file.is-directory ? Theme.color-accent : Theme.color-text-dim;
+                                    font-size: Theme.text-xs;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: file.name;
+                                    color: Theme.color-text;
+                                    font-size: Theme.text-sm;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: file.size;
+                                    color: Theme.color-text-dim;
+                                    font-size: Theme.text-xs;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Focus terminal input when switching to terminal
+    public function focus-chat-input() {
+        // This would focus the chat input in the embedded ChatPanel
+        // but we can't easily access it - the chat panel handles its own focus
+    }
+}
+
+// Launcher overlay
+export component Launcher inherits Rectangle {
+    in property <[LauncherItem]> items: [];
+    in property <bool> show: false;
+
+    property <int> selected-index: 0;
+
+    callback select(int);
+    callback close-requested();
+
+    background: root.show ? Theme.color-overlay : transparent;
+    visible: root.show;
+
+    // Backdrop click to close
+    TouchArea {
+        clicked => { root.close-requested(); }
+    }
+
+    // Keyboard handling
+    FocusScope {
+        enabled: root.show;
+
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                root.close-requested();
+                return accept;
+            }
+            // Down arrow or Ctrl+N
+            if event.text == Key.DownArrow || (event.modifiers.control && event.text == "n") {
+                if root.items.length > 0 && root.selected-index < root.items.length - 1 {
+                    root.selected-index = root.selected-index + 1;
+                }
+                return accept;
+            }
+            // Up arrow or Ctrl+P
+            if event.text == Key.UpArrow || (event.modifiers.control && event.text == "p") {
+                if root.items.length > 0 && root.selected-index > 0 {
+                    root.selected-index = root.selected-index - 1;
+                }
+                return accept;
+            }
+            // Enter to select
+            if event.text == Key.Return {
+                if root.items.length > 0 && root.selected-index >= 0 && root.selected-index < root.items.length {
+                    root.select(root.items[root.selected-index].id);
+                }
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    // Modal container
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 100px;
+        width: 400px;
+        min-height: 60px;
+        background: Theme.color-panel;
+        border-color: Theme.color-border;
+        border-width: Theme.border-width;
+        border-radius: Theme.radius-md;
+
+        // Prevent backdrop click
+        TouchArea {}
+
+        VerticalLayout {
+            padding: Theme.pad-xs;
+            spacing: 2px;
+
+            // Header
+            Rectangle {
+                height: 32px;
+
+                Text {
+                    x: Theme.pad-sm;
+                    text: "Open Tool";
+                    color: Theme.color-text;
+                    font-size: Theme.text-md;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+
+            Separator {}
+
+            // Items
+            for item[idx] in root.items: Rectangle {
+                height: 36px;
+                background: idx == root.selected-index ? Theme.color-accent-muted :
+                            (item-touch.has-hover ? Theme.color-panel-hover : transparent);
+                border-radius: Theme.radius-sm;
+
+                item-touch := TouchArea {
+                    clicked => { root.select(item.id); }
+                }
+
+                HorizontalLayout {
+                    padding-left: Theme.pad-md;
+                    padding-right: Theme.pad-md;
+
+                    Text {
+                        text: item.label;
+                        color: Theme.color-text;
+                        font-size: Theme.text-md;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Hint bar
+            Rectangle {
+                height: 24px;
+                background: Theme.color-panel-elevated;
+                border-radius: Theme.radius-sm;
+
+                Text {
+                    x: Theme.pad-sm;
+                    text: "Up/Down navigate | Enter select | Esc close";
+                    color: Theme.color-text-dim;
+                    font-size: Theme.text-xs;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Reset selection when shown
+    changed show => {
+        if root.show {
+            root.selected-index = 0;
+        }
+    }
+}

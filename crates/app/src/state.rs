@@ -82,6 +82,11 @@ impl AppState {
         Ok(dirs.data_dir().to_path_buf())
     }
 
+    /// Get the data directory path
+    pub fn data_dir(&self) -> PathBuf {
+        Self::data_path().unwrap_or_else(|_| PathBuf::from("."))
+    }
+
     pub fn set_current_user(&self, user_id: Option<Uuid>) {
         *self.current_user_id.lock().unwrap() = user_id;
     }

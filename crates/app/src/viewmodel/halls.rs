@@ -1,6 +1,6 @@
 //! Hall view model
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use exom_core::{Hall, HallRole, HostElectionResult, HostingState, Invite, Membership};
 use exom_net::{InviteUrl, NetRole, DEFAULT_PORT};
@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::network::NetworkManager;
 use crate::state::AppState;
+use crate::viewmodel::workspace::{init_workspace_for_hall, WorkspaceManager};
 use crate::HallItem;
 use crate::MainWindow;
 use crate::SwitcherHallItem;
@@ -18,6 +19,7 @@ pub fn setup_hall_bindings(
     window: &MainWindow,
     state: Arc<AppState>,
     _network_manager: Arc<Mutex<NetworkManager>>,
+    workspace_manager: Arc<StdMutex<WorkspaceManager>>,
 ) {
     // Load halls
     let state_load = state.clone();
@@ -144,6 +146,7 @@ pub fn setup_hall_bindings(
     // Select hall
     let state_select = state.clone();
     let window_weak = window.as_weak();
+    let workspace_manager_select = workspace_manager.clone();
     window.on_select_hall(move |hall_id_str| {
         let hall_id = match uuid::Uuid::parse_str(&hall_id_str) {
             Ok(id) => id,
@@ -228,6 +231,9 @@ pub fn setup_hall_bindings(
             w.set_current_user_role(role.display_name().into());
             w.invoke_load_messages();
             w.invoke_load_members();
+
+            // Initialize workspace for this hall
+            init_workspace_for_hall(&w, &workspace_manager_select, hall_id);
         }
     });
 

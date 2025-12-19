@@ -11,6 +11,7 @@ mod network;
 mod platform;
 mod state;
 mod viewmodel;
+mod workspace;
 
 slint::include_modules!();
 
@@ -42,11 +43,16 @@ fn main() {
     // Initialize network manager
     let network_manager = Arc::new(tokio::sync::Mutex::new(network::NetworkManager::new()));
 
+    // Initialize workspace manager
+    let workspace_manager = Arc::new(std::sync::Mutex::new(
+        viewmodel::WorkspaceManager::new(app_state.data_dir().to_path_buf()),
+    ));
+
     // Create main window
     let main_window = MainWindow::new().unwrap();
 
     // Set up view model bindings
-    viewmodel::setup_bindings(&main_window, app_state, network_manager);
+    viewmodel::setup_bindings(&main_window, app_state, network_manager, workspace_manager);
 
     // Run the application
     main_window.run().unwrap();
