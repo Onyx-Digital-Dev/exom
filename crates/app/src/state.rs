@@ -147,6 +147,7 @@ impl AppState {
     }
 
     /// Clear system messages for a hall (e.g., when leaving)
+    #[allow(dead_code)]
     pub fn clear_system_messages(&self, hall_id: Uuid) {
         self.system_messages
             .lock()
@@ -166,8 +167,7 @@ impl AppState {
         let joined: Vec<String> = new_members
             .iter()
             .filter(|m| {
-                !known.iter().any(|k| k.user_id == m.user_id)
-                    && my_user_id.map_or(true, |uid| uid != m.user_id)
+                !known.iter().any(|k| k.user_id == m.user_id) && my_user_id != Some(m.user_id)
             })
             .map(|m| m.username.clone())
             .collect();
@@ -176,8 +176,7 @@ impl AppState {
         let left: Vec<String> = known
             .iter()
             .filter(|k| {
-                !new_members.iter().any(|m| m.user_id == k.user_id)
-                    && my_user_id.map_or(true, |uid| uid != k.user_id)
+                !new_members.iter().any(|m| m.user_id == k.user_id) && my_user_id != Some(k.user_id)
             })
             .map(|k| k.username.clone())
             .collect();
@@ -212,7 +211,13 @@ impl AppState {
     /// Messages that exist in DB but are still marked pending should be confirmed
     /// Returns count of messages reconciled
     pub fn reconcile_pending_messages(&self, _hall_id: Uuid) -> usize {
-        let pending: Vec<Uuid> = self.pending_messages.lock().unwrap().iter().cloned().collect();
+        let pending: Vec<Uuid> = self
+            .pending_messages
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect();
         if pending.is_empty() {
             return 0;
         }
@@ -260,7 +265,7 @@ impl AppState {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(uid, _)| my_user_id.map_or(true, |my_id| **uid != my_id))
+            .filter(|(uid, _)| my_user_id != Some(**uid))
             .map(|(uid, (username, _))| (*uid, username.clone()))
             .collect()
     }
@@ -276,7 +281,12 @@ impl AppState {
 
     /// Get list of pending message IDs
     pub fn get_pending_messages(&self) -> Vec<Uuid> {
-        self.pending_messages.lock().unwrap().iter().cloned().collect()
+        self.pending_messages
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect()
     }
 
     /// Update last activity timestamp for a user
@@ -297,6 +307,7 @@ impl AppState {
     }
 
     /// Clear all activity data (e.g., when switching halls)
+    #[allow(dead_code)]
     pub fn clear_member_activity(&self) {
         self.member_activity.lock().unwrap().clear();
     }
@@ -315,5 +326,38 @@ fn format_activity_hint(elapsed: std::time::Duration) -> String {
         format!("{}h", secs / 3600)
     } else {
         format!("{}d", secs / 86400)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_format_activity_hint() {
+        // <10s => "Active"
+        assert_eq!(format_activity_hint(Duration::from_secs(0)), "Active");
+        assert_eq!(format_activity_hint(Duration::from_secs(5)), "Active");
+        assert_eq!(format_activity_hint(Duration::from_secs(9)), "Active");
+
+        // 10s-59s => "Xs"
+        assert_eq!(format_activity_hint(Duration::from_secs(10)), "10s");
+        assert_eq!(format_activity_hint(Duration::from_secs(30)), "30s");
+        assert_eq!(format_activity_hint(Duration::from_secs(59)), "59s");
+
+        // 1m-59m => "Xm"
+        assert_eq!(format_activity_hint(Duration::from_secs(60)), "1m");
+        assert_eq!(format_activity_hint(Duration::from_secs(90)), "1m"); // rounds down
+        assert_eq!(format_activity_hint(Duration::from_secs(3599)), "59m");
+
+        // 1h-23h => "Xh"
+        assert_eq!(format_activity_hint(Duration::from_secs(3600)), "1h");
+        assert_eq!(format_activity_hint(Duration::from_secs(7200)), "2h");
+        assert_eq!(format_activity_hint(Duration::from_secs(86399)), "23h");
+
+        // >=1d => "Xd"
+        assert_eq!(format_activity_hint(Duration::from_secs(86400)), "1d");
+        assert_eq!(format_activity_hint(Duration::from_secs(172800)), "2d");
     }
 }

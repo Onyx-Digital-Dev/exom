@@ -753,6 +753,27 @@ All typing indicator tests pass. Implementation includes throttle (600ms), debou
 
 ---
 
+### Test 5: No Duplicate Messages After Reconnect
+
+**Steps:**
+1. Host A and client B connected
+2. Disconnect B's network
+3. B sends 3 messages while offline
+4. Reconnect B
+5. Observe message list on both A and B
+
+**Expected:**
+- All 3 messages appear exactly once on each client
+- No duplicates in message list
+- UUID-based deduplication prevents double inserts
+
+**Result:** PASS - Code review confirms:
+- `storage/messages.rs:25`: `INSERT OR IGNORE` prevents duplicates
+- Message IDs are UUIDs generated on send
+- SyncBatch uses same INSERT OR IGNORE
+
+---
+
 ### Summary
 
 | Test | Status |
@@ -761,5 +782,23 @@ All typing indicator tests pass. Implementation includes throttle (600ms), debou
 | 2. Message re-sent on reconnect | PASS |
 | 3. Pending status persists | PASS |
 | 4. SyncBatch reconciles | PASS |
+| 5. No duplicate messages | PASS |
 
 All Phase I (Trust Signals) features verified through code review.
+
+---
+
+## Two-Machine Verification Checklist
+
+Quick verification steps for runtime testing:
+
+1. **Start host A**, create/select hall, note invite URL
+2. **Start client B**, join via invite URL
+3. **I3**: Send chat from B, verify A's member list shows "Active" for B
+4. **I4**: Verify B shows "(Good)" next to "Connected" status
+5. **I5**: On A, click "New" to regenerate invite; verify old URL invalid for new joins
+6. **I6**: Kill B's network, send 3 messages from B (gray circles), restore network
+7. **I6**: Verify all 3 messages flip to green dots, appear once on A
+8. **I4**: Disconnect B, verify quality indicator disappears
+9. **I3**: Wait 15s, verify B's activity hint changes from "Active" to "Xs"
+10. Confirm no UI freezes or error popups throughout

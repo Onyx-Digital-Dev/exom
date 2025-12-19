@@ -34,11 +34,13 @@ impl DisplayServer {
     }
 
     /// Returns true if running under Wayland
+    #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         matches!(self, DisplayServer::Wayland)
     }
 
     /// Returns true if running under X11
+    #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         matches!(self, DisplayServer::X11)
     }

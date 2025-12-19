@@ -1,5 +1,6 @@
 //! Chat view model
 
+use std::rc::Rc;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
 
@@ -341,7 +342,7 @@ pub fn setup_chat_bindings(
     let network_manager_typing = _network_manager.clone();
     let typing_throttle = Arc::new(StdMutex::new(TypingThrottle::new()));
     let typing_throttle_clone = typing_throttle.clone();
-    let stop_typing_timer = Arc::new(StdMutex::new(None::<slint::Timer>));
+    let stop_typing_timer = Rc::new(StdMutex::new(None::<slint::Timer>));
     let stop_typing_timer_clone = stop_typing_timer.clone();
 
     window.on_typing_changed(move || {
@@ -368,7 +369,9 @@ pub fn setup_chat_bindings(
             let nm = network_manager_typing.clone();
             tokio::spawn(async move {
                 if let Ok(nm) = nm.try_lock() {
-                    let _ = nm.send_typing(hall_id, user_id, username.clone(), true).await;
+                    let _ = nm
+                        .send_typing(hall_id, user_id, username.clone(), true)
+                        .await;
                 }
             });
         }

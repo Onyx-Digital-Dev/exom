@@ -35,6 +35,19 @@ pub enum ConnectionQuality {
     Poor,
 }
 
+impl ConnectionQuality {
+    /// Determine quality from average RTT in milliseconds
+    pub fn from_rtt(avg_rtt_ms: u128) -> Self {
+        if avg_rtt_ms < 80 {
+            ConnectionQuality::Good
+        } else if avg_rtt_ms <= 200 {
+            ConnectionQuality::Ok
+        } else {
+            ConnectionQuality::Poor
+        }
+    }
+}
+
 /// Connection info for persistence and reconnect
 #[derive(Debug, Clone)]
 pub struct ConnectionInfo {
@@ -46,6 +59,7 @@ pub struct ConnectionInfo {
 
 /// Events from the network layer to the UI
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields kept for debugging/future use
 pub enum NetworkEvent {
     /// Connection state changed
     StateChanged(NetworkState),
@@ -125,6 +139,7 @@ struct NetworkManagerState {
     last_ping_sent: Option<std::time::Instant>,
 }
 
+#[allow(dead_code)] // Variants kept for future use
 enum NetworkCommand {
     StartHosting {
         hall_id: Uuid,
@@ -272,6 +287,7 @@ impl NetworkManager {
     }
 
     /// Disconnect from network
+    #[allow(dead_code)]
     pub async fn disconnect(&self) {
         let _ = self.cmd_tx.send(NetworkCommand::Disconnect).await;
     }
@@ -296,6 +312,7 @@ impl NetworkManager {
     }
 
     /// Cancel any ongoing reconnect attempt
+    #[allow(dead_code)]
     pub async fn cancel_reconnect(&self) {
         let _ = self.cmd_tx.send(NetworkCommand::CancelReconnect).await;
     }
@@ -319,6 +336,7 @@ impl NetworkManager {
     }
 
     /// Get connection info if connected
+    #[allow(dead_code)]
     pub async fn connection_info(&self) -> Option<ConnectionInfo> {
         let s = self.state.read().await;
         if s.network_state == NetworkState::Connected || s.network_state == NetworkState::Hosting {
@@ -353,7 +371,8 @@ async fn network_task(
     mut cmd_rx: mpsc::Receiver<NetworkCommand>,
 ) {
     let mut client: Option<Client> = None;
-    let mut ping_interval = tokio::time::interval(std::time::Duration::from_millis(PING_INTERVAL_MS));
+    let mut ping_interval =
+        tokio::time::interval(std::time::Duration::from_millis(PING_INTERVAL_MS));
     ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -694,6 +713,7 @@ async fn try_connect(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_start_hosting(
     state: &Arc<RwLock<NetworkManagerState>>,
     event_tx: &mpsc::Sender<NetworkEvent>,
@@ -1080,7 +1100,7 @@ async fn handle_client_event(
             let should_step_down = is_hosting
                 && (epoch > our_epoch
                     || (epoch == our_epoch
-                        && our_user_id.map_or(true, |uid| {
+                        && our_user_id.is_none_or(|uid| {
                             // Tie-breaker: lower user_id wins
                             host_user_id.to_string() < uid.to_string()
                         })));
@@ -1162,20 +1182,16 @@ async fn handle_client_event(
                 // Calculate average RTT
                 let avg_rtt = s.rtt_samples.iter().sum::<u64>() / s.rtt_samples.len() as u64;
 
-                // Determine quality
-                let new_quality = if avg_rtt < 80 {
-                    ConnectionQuality::Good
-                } else if avg_rtt <= 200 {
-                    ConnectionQuality::Ok
-                } else {
-                    ConnectionQuality::Poor
-                };
+                // Determine quality from RTT
+                let new_quality = ConnectionQuality::from_rtt(avg_rtt as u128);
 
                 // Only emit event if quality changed
                 if s.quality != Some(new_quality) {
                     s.quality = Some(new_quality);
                     drop(s);
-                    let _ = event_tx.send(NetworkEvent::QualityChanged(new_quality)).await;
+                    let _ = event_tx
+                        .send(NetworkEvent::QualityChanged(new_quality))
+                        .await;
                 }
             }
         }
@@ -1270,4 +1286,27 @@ async fn handle_client_disconnected(
     let _ = event_tx
         .send(NetworkEvent::StateChanged(NetworkState::Offline))
         .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_connection_quality_from_rtt() {
+        // Good: <80ms
+        assert_eq!(ConnectionQuality::from_rtt(0), ConnectionQuality::Good);
+        assert_eq!(ConnectionQuality::from_rtt(50), ConnectionQuality::Good);
+        assert_eq!(ConnectionQuality::from_rtt(79), ConnectionQuality::Good);
+
+        // Ok: 80-200ms
+        assert_eq!(ConnectionQuality::from_rtt(80), ConnectionQuality::Ok);
+        assert_eq!(ConnectionQuality::from_rtt(140), ConnectionQuality::Ok);
+        assert_eq!(ConnectionQuality::from_rtt(200), ConnectionQuality::Ok);
+
+        // Poor: >200ms
+        assert_eq!(ConnectionQuality::from_rtt(201), ConnectionQuality::Poor);
+        assert_eq!(ConnectionQuality::from_rtt(500), ConnectionQuality::Poor);
+        assert_eq!(ConnectionQuality::from_rtt(1000), ConnectionQuality::Poor);
+    }
 }

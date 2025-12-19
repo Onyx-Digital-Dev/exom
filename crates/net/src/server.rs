@@ -154,10 +154,8 @@ impl Server {
     pub async fn broadcast_except(&self, msg: Message, except: Uuid) {
         let state = self.state.read().await;
         for peer in state.peers.values() {
-            if peer.user_id != except {
-                if peer.tx.send(msg.clone()).await.is_err() {
-                    debug!(user_id = %peer.user_id, "Failed to queue message for peer");
-                }
+            if peer.user_id != except && peer.tx.send(msg.clone()).await.is_err() {
+                debug!(user_id = %peer.user_id, "Failed to queue message for peer");
             }
         }
     }
@@ -423,7 +421,10 @@ async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<Server
                     .filter(|m| m.sequence > last_sequence)
                     .cloned()
                     .collect();
-                let from_seq = messages.first().map(|m| m.sequence).unwrap_or(last_sequence);
+                let from_seq = messages
+                    .first()
+                    .map(|m| m.sequence)
+                    .unwrap_or(last_sequence);
                 (messages, from_seq)
             };
 
@@ -463,7 +464,7 @@ async fn remove_peer(state: &Arc<RwLock<ServerState>>, user_id: Uuid) {
 async fn broadcast_to_peers(state: &Arc<RwLock<ServerState>>, msg: Message, except: Option<Uuid>) {
     let s = state.read().await;
     for peer in s.peers.values() {
-        if except.map_or(true, |ex| peer.user_id != ex) {
+        if except != Some(peer.user_id) {
             let _ = peer.tx.send(msg.clone()).await;
         }
     }

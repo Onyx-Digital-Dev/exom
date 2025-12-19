@@ -9,7 +9,9 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 
 use tokio::sync::Mutex;
 
-use crate::network::{ConnectionInfo, ConnectionQuality, NetworkEvent, NetworkManager, NetworkState};
+use crate::network::{
+    ConnectionInfo, ConnectionQuality, NetworkEvent, NetworkManager, NetworkState,
+};
 use crate::state::{AppState, TrackedMember};
 use crate::MainWindow;
 use crate::MemberItem;
@@ -163,7 +165,11 @@ fn handle_network_event(
             attempt: _,
             next_in_secs,
         } => {
-            set_network_status(window, &format!("Reconnecting in {}s...", next_in_secs), false);
+            set_network_status(
+                window,
+                &format!("Reconnecting in {}s...", next_in_secs),
+                false,
+            );
         }
         NetworkEvent::ChatReceived(net_msg) => {
             // Store incoming message locally if it's for the current hall
@@ -176,9 +182,7 @@ fn handle_network_event(
 
             if let Some(hall_id) = current_hall {
                 // Only store if message is for current hall and not from self
-                if net_msg.hall_id == hall_id
-                    && current_user.map_or(true, |uid| uid != net_msg.sender_id)
-                {
+                if net_msg.hall_id == hall_id && current_user != Some(net_msg.sender_id) {
                     store_network_message(state, &net_msg);
                     // Trigger UI refresh
                     window.invoke_load_messages();
@@ -317,7 +321,11 @@ fn handle_network_event(
                     }
                 }
                 if stored > 0 {
-                    tracing::debug!(count = stored, confirmed = confirmed, "Synced messages from batch");
+                    tracing::debug!(
+                        count = stored,
+                        confirmed = confirmed,
+                        "Synced messages from batch"
+                    );
                     window.invoke_load_messages();
                 }
             }
@@ -416,7 +424,10 @@ fn resend_pending_messages(state: &Arc<AppState>, network_manager: &Arc<Mutex<Ne
         return;
     }
 
-    tracing::info!(count = messages_to_send.len(), "Re-sending pending messages");
+    tracing::info!(
+        count = messages_to_send.len(),
+        "Re-sending pending messages"
+    );
 
     // Send each pending message
     let nm = network_manager.clone();
