@@ -274,6 +274,11 @@ impl AppState {
         typing.len() < before
     }
 
+    /// Get list of pending message IDs
+    pub fn get_pending_messages(&self) -> Vec<Uuid> {
+        self.pending_messages.lock().unwrap().iter().cloned().collect()
+    }
+
     /// Update last activity timestamp for a user
     pub fn update_member_activity(&self, user_id: Uuid) {
         self.member_activity

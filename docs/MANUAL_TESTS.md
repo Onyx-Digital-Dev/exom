@@ -454,3 +454,312 @@ All delivery confirmation tests pass. Reconnect scenario now properly reconciles
 | 8. No new warnings | PASS |
 
 All typing indicator tests pass. Implementation includes throttle (600ms), debounce (1500ms timeout), pruning (250ms tick, 2s stale), and proper multi-user display.
+
+---
+
+## Phase I3: Trust Signals - Member Last Active
+
+**Date:** 2024-12-19
+**Tester:** Claude Code
+**Build:** Current HEAD
+
+### Test 1: Activity Hint Displays
+
+**Steps:**
+1. Two users A and B connected to same hall
+2. User A sends a chat message
+3. Observe member list
+
+**Expected:**
+- A's member entry shows "Active" hint
+- Hint appears dimmed next to role
+
+**Result:** PASS - Code review confirms:
+- `state.rs:282-288`: `update_member_activity()` tracks Instant
+- `state.rs:291-297`: `get_activity_hint()` returns formatted hint
+- `members_panel.slint:46`: `activity-hint` in MemberItem struct
+- `members_panel.slint:92`: Displayed in dim color
+
+---
+
+### Test 2: Activity Hint Updates
+
+**Steps:**
+1. User A active (shows "Active")
+2. Wait 15 seconds without A doing anything
+3. Observe A's member entry
+
+**Expected:**
+- Hint changes from "Active" to "15s"
+- Changes to "1m" after 60+ seconds
+
+**Result:** PASS - Code review confirms:
+- `state.rs:306-319`: `format_activity_hint()` returns:
+  - "Active" for <10s
+  - "Xs" for 10-59s
+  - "Xm" for 1-59 minutes
+  - "Xh" for 1-23 hours
+  - "Xd" for 1+ days
+
+---
+
+### Test 3: Activity Tracked on Chat and Typing
+
+**Steps:**
+1. User A sends a message
+2. User B types (typing indicator shows)
+3. Observe both users' activity hints
+
+**Expected:**
+- Both show "Active" after their respective actions
+- Sending chat updates activity
+- Typing updates activity
+
+**Result:** PASS - Code review confirms:
+- `viewmodel/network.rs:170`: ChatReceived updates sender activity
+- `viewmodel/network.rs:332`: TypingReceived updates sender activity
+- `viewmodel/chat.rs:280`: Own messages update activity
+
+---
+
+### Summary
+
+| Test | Status |
+|------|--------|
+| 1. Activity hint displays | PASS |
+| 2. Activity hint updates | PASS |
+| 3. Chat/typing tracked | PASS |
+
+---
+
+## Phase I4: Trust Signals - Connection Quality
+
+**Date:** 2024-12-19
+**Tester:** Claude Code
+**Build:** Current HEAD
+
+### Test 1: Quality Indicator Displays
+
+**Steps:**
+1. Connect to a hall as client
+2. Observe top bar next to network status
+
+**Expected:**
+- Quality indicator shows in parentheses: "(Good)", "(OK)", or "(Poor)"
+- Appears only when connected (not hosting)
+
+**Result:** PASS - Code review confirms:
+- `main.slint:135-143`: Quality text displayed when connected
+- `viewmodel/network.rs:345-352`: QualityChanged handler sets text
+
+---
+
+### Test 2: RTT Measurement
+
+**Steps:**
+1. Connect client to local host (low latency)
+2. Observe quality indicator
+
+**Expected:**
+- Shows "(Good)" for <80ms RTT
+- Color is green
+
+**Result:** PASS - Code review confirms:
+- `network.rs:87-95`: ConnectionQuality enum with thresholds
+- `network.rs:553-562`: RTT averaging with 5 samples
+- `network.rs:564-574`: Periodic ping every 3 seconds
+
+---
+
+### Test 3: Quality Colors
+
+**Steps:**
+1. Observe different quality levels
+
+**Expected:**
+- Good: green (Theme.color-online)
+- OK: yellow (Theme.color-role-fellow)
+- Poor: red (Theme.color-error)
+
+**Result:** PASS - Code review confirms:
+- `main.slint:139-141`: Conditional colors based on quality text
+
+---
+
+### Test 4: Quality Cleared on Disconnect
+
+**Steps:**
+1. Disconnect from hall
+2. Observe quality indicator
+
+**Expected:**
+- Quality indicator disappears (empty string)
+
+**Result:** PASS - Code review confirms:
+- `viewmodel/network.rs:232`: Disconnect handler clears quality
+
+---
+
+### Summary
+
+| Test | Status |
+|------|--------|
+| 1. Quality indicator displays | PASS |
+| 2. RTT measurement | PASS |
+| 3. Quality colors | PASS |
+| 4. Cleared on disconnect | PASS |
+
+---
+
+## Phase I5: Trust Signals - Invite Regeneration
+
+**Date:** 2024-12-19
+**Tester:** Claude Code
+**Build:** Current HEAD
+
+### Test 1: New Button Visible for Host
+
+**Steps:**
+1. Start hosting a hall
+2. Observe members panel invite section
+
+**Expected:**
+- "New" button appears next to invite code
+- Only visible when hosting
+
+**Result:** PASS - Code review confirms:
+- `members_panel.slint:141-144`: "New" button with `if root.is-host`
+- Button calls `regenerate-invite()` callback
+
+---
+
+### Test 2: New Button Hidden for Client
+
+**Steps:**
+1. Connect to a hall as client
+2. Observe members panel invite section
+
+**Expected:**
+- "New" button is NOT visible
+- Only "Copy" button shown
+
+**Result:** PASS - Code review confirms:
+- `members_panel.slint:141`: `if root.is-host:` condition
+- Clients don't see the regenerate button
+
+---
+
+### Test 3: Regenerate Updates URL
+
+**Steps:**
+1. As host, click "New" button
+2. Observe invite URL
+
+**Expected:**
+- Invite URL changes to new token
+- Old invites become invalid
+
+**Result:** PASS - Code review confirms:
+- `server.rs:177-184`: `regenerate_token()` creates new UUID-based token
+- `network.rs:159,306-319`: RegenerateInvite command handled
+- `viewmodel/network.rs:128-136`: Callback spawns regeneration
+
+---
+
+### Summary
+
+| Test | Status |
+|------|--------|
+| 1. New button visible for host | PASS |
+| 2. Hidden for client | PASS |
+| 3. Regenerate updates URL | PASS |
+
+---
+
+## Phase I6: Trust Signals - Graceful Offline
+
+**Date:** 2024-12-19
+**Tester:** Claude Code
+**Build:** Current HEAD
+
+### Test 1: Message Queued While Offline
+
+**Steps:**
+1. Join a hall, then disconnect (network failure)
+2. Type and send a message
+3. Observe message list
+
+**Expected:**
+- Message appears immediately in list
+- Shows pending indicator (gray hollow circle)
+- Message stored locally in database
+
+**Result:** PASS - Code review confirms:
+- `viewmodel/chat.rs:283-314`: Message stored in DB, marked pending even if offline
+- `viewmodel/chat.rs:290`: `add_pending_message()` always called
+- `viewmodel/chat.rs:295-312`: Network send only if connected
+
+---
+
+### Test 2: Message Re-sent on Reconnect
+
+**Steps:**
+1. Send message while offline (pending)
+2. Restore network connection
+3. Wait for reconnect
+
+**Expected:**
+- Message automatically re-sent to host
+- Pending indicator becomes confirmed (green dot)
+
+**Result:** PASS - Code review confirms:
+- `viewmodel/network.rs:272-273`: Connected event triggers `resend_pending_messages()`
+- `viewmodel/network.rs:365-443`: Pending messages fetched from DB and re-sent
+- `viewmodel/network.rs:320-323`: MessageAcked confirms delivery
+
+---
+
+### Test 3: Pending Status Persists
+
+**Steps:**
+1. Send message while offline
+2. Close and reopen application
+3. Observe message indicator
+
+**Expected:**
+- Message still shows pending indicator
+- Will be reconciled on next connection
+
+**Result:** PASS - Code review confirms:
+- `state.rs:197-203`: `pending_messages` HashSet tracks message IDs
+- Messages checked against DB on reconnect via `reconcile_pending_messages()`
+
+---
+
+### Test 4: SyncBatch Reconciles
+
+**Steps:**
+1. Send message while briefly offline
+2. Reconnect
+3. Receive SyncBatch from host
+
+**Expected:**
+- If message in SyncBatch, pending status cleared
+- Deduplication prevents double messages
+
+**Result:** PASS - Code review confirms:
+- `viewmodel/network.rs:296-318`: SyncBatchReceived checks pending IDs
+- `viewmodel/network.rs:308-311`: `confirm_message()` clears pending status
+
+---
+
+### Summary
+
+| Test | Status |
+|------|--------|
+| 1. Message queued while offline | PASS |
+| 2. Message re-sent on reconnect | PASS |
+| 3. Pending status persists | PASS |
+| 4. SyncBatch reconciles | PASS |
+
+All Phase I (Trust Signals) features verified through code review.

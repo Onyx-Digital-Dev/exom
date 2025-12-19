@@ -286,16 +286,15 @@ pub fn setup_chat_bindings(
         }
         drop(db);
 
-        // Send over network if connected
+        // Always mark as pending - will be confirmed on ACK or reconcile
+        state_send.add_pending_message(message_id);
+
+        // Send over network if connected (otherwise queued for reconnect)
         let network_manager_clone = network_manager_send.clone();
-        let state_for_pending = state_send.clone();
         tokio::spawn(async move {
             if let Ok(nm) = network_manager_clone.try_lock() {
                 let net_state = nm.state().await;
                 if net_state == NetworkState::Hosting || net_state == NetworkState::Connected {
-                    // Mark as pending before sending
-                    state_for_pending.add_pending_message(message_id);
-
                     let net_msg = NetMessage {
                         id: message_id,
                         hall_id,
@@ -308,6 +307,8 @@ pub fn setup_chat_bindings(
                     };
                     let _ = nm.send_chat(net_msg).await;
                 }
+                // If offline, message stays in pending set and DB
+                // Will be re-sent on reconnect
             }
         });
 

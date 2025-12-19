@@ -55,7 +55,7 @@ pub fn setup_network_bindings(
             // Process events after releasing lock
             for event in events {
                 if let Some(window) = window_weak.upgrade() {
-                    handle_network_event(&window, &state_clone, event);
+                    handle_network_event(&window, &state_clone, &network_manager_clone, event);
                 }
             }
         },
@@ -136,7 +136,12 @@ pub fn setup_network_bindings(
     });
 }
 
-fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: NetworkEvent) {
+fn handle_network_event(
+    window: &MainWindow,
+    state: &Arc<AppState>,
+    network_manager: &Arc<Mutex<NetworkManager>>,
+    event: NetworkEvent,
+) {
     match event {
         NetworkEvent::StateChanged(net_state) => {
             let (status, connected) = match net_state {
@@ -269,6 +274,9 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             // Persist connection info for auto-reconnect
             persist_connection(state, &conn_info);
 
+            // Re-send any pending messages that weren't synced
+            resend_pending_messages(state, network_manager);
+
             // Reconcile any pending messages from previous session
             if let Some(hall_id) = state.current_hall_id() {
                 let reconciled = state.reconcile_pending_messages(hall_id);
@@ -352,6 +360,86 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             window.set_invite_url(new_url.into());
         }
     }
+}
+
+/// Re-send any pending messages that weren't ACKed before disconnect
+fn resend_pending_messages(state: &Arc<AppState>, network_manager: &Arc<Mutex<NetworkManager>>) {
+    let pending_ids = state.get_pending_messages();
+    if pending_ids.is_empty() {
+        return;
+    }
+
+    let current_hall = state.current_hall_id();
+    let current_user = state.current_user_id();
+    let (hall_id, user_id) = match (current_hall, current_user) {
+        (Some(h), Some(u)) => (h, u),
+        _ => return,
+    };
+
+    // Get user info for network messages
+    let (username, role_value) = {
+        let db = state.db.lock().unwrap();
+        let username = db
+            .users()
+            .find_by_id(user_id)
+            .ok()
+            .flatten()
+            .map(|u| u.username)
+            .unwrap_or_else(|| "Unknown".to_string());
+        let role = db
+            .halls()
+            .get_user_role(user_id, hall_id)
+            .ok()
+            .flatten()
+            .map(|r| r as u8)
+            .unwrap_or(1);
+        (username, role)
+    };
+
+    // Get pending messages from database
+    let messages_to_send: Vec<(uuid::Uuid, String, chrono::DateTime<chrono::Utc>)> = {
+        let db = state.db.lock().unwrap();
+        pending_ids
+            .iter()
+            .filter_map(|&msg_id| {
+                db.messages()
+                    .find_by_id(msg_id)
+                    .ok()
+                    .flatten()
+                    .filter(|m| m.sender_id == user_id && m.hall_id == hall_id)
+                    .map(|m| (m.id, m.content, m.created_at))
+            })
+            .collect()
+    };
+
+    if messages_to_send.is_empty() {
+        return;
+    }
+
+    tracing::info!(count = messages_to_send.len(), "Re-sending pending messages");
+
+    // Send each pending message
+    let nm = network_manager.clone();
+    let username = username.clone();
+    tokio::spawn(async move {
+        if let Ok(nm) = nm.try_lock() {
+            for (msg_id, content, timestamp) in messages_to_send {
+                let net_msg = NetMessage {
+                    id: msg_id,
+                    hall_id,
+                    sender_id: user_id,
+                    sender_username: username.clone(),
+                    sender_role: NetRole::from_value(role_value),
+                    content,
+                    timestamp,
+                    sequence: 0, // Assigned by host
+                };
+                if let Err(e) = nm.send_chat(net_msg).await {
+                    tracing::warn!(error = %e, msg_id = %msg_id, "Failed to resend message");
+                }
+            }
+        }
+    });
 }
 
 /// Persist connection info for auto-reconnect on next launch
