@@ -1,0 +1,68 @@
+app-id: io.exom.Exom
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: exom-app
+
+# Finish args - permissions for the sandbox
+finish-args:
+  # Display access (Wayland + X11 fallback)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+
+  # GPU access for Slint rendering
+  - --device=dri
+
+  # Network access for LAN sync
+  - --share=network
+
+  # Clipboard access (X11 and Wayland)
+  - --socket=x11
+
+  # File access for Hall Chest (user documents)
+  - --filesystem=xdg-documents:create
+  - --filesystem=xdg-data:create
+
+  # Access to Exom data directory
+  - --filesystem=~/.local/share/exom:create
+
+  # Font access
+  - --filesystem=/usr/share/fonts:ro
+  - --filesystem=~/.local/share/fonts:ro
+  - --filesystem=~/.fonts:ro
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/exom/cargo
+    RUST_BACKTRACE: '1'
+
+modules:
+  - name: exom
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/exom/cargo
+    build-commands:
+      # Build the application
+      - cargo build --release -p exom-app
+      # Install binary
+      - install -Dm755 target/release/exom-app ${FLATPAK_DEST}/bin/exom-app
+      # Install desktop file
+      - install -Dm644 io.exom.Exom.desktop ${FLATPAK_DEST}/share/applications/io.exom.Exom.desktop
+      # Install icon (placeholder - create actual icon later)
+      - install -Dm644 io.exom.Exom.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.exom.Exom.svg || true
+      # Install metainfo
+      - install -Dm644 io.exom.Exom.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.exom.Exom.metainfo.xml || true
+    sources:
+      - type: dir
+        path: .
+      # Desktop file inline
+      - type: file
+        path: io.exom.Exom.desktop
+      # Metainfo inline
+      - type: file
+        path: io.exom.Exom.metainfo.xml

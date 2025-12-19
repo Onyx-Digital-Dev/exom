@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Exom
+Comment=Local-first collaborative workspace
+Exec=exom-app
+Icon=io.exom.Exom
+Terminal=false
+Type=Application
+Categories=Office;Collaboration;Network;
+Keywords=collaboration;workspace;local-first;chat;
+StartupNotify=true

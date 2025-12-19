@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.exom.Exom</id>
+  <name>Exom</name>
+  <summary>Local-first collaborative workspace</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Exom is a local-first collaborative workspace designed for teams who value
+      privacy and data ownership. All data stays on your devices - no cloud servers,
+      no tracking, no subscriptions.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Real-time collaboration over LAN</li>
+      <li>End-to-end encrypted messaging</li>
+      <li>Per-hall file storage (Chest)</li>
+      <li>Associate system with privacy controls</li>
+      <li>Extensible bot system</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.exom.Exom.desktop</launchable>
+
+  <url type="homepage">https://github.com/Onyx-Digital-Dev/exom</url>
+  <url type="bugtracker">https://github.com/Onyx-Digital-Dev/exom/issues</url>
+
+  <developer id="io.exom">
+    <name>Onyx Digital Dev</name>
+  </developer>
+
+  <provides>
+    <binary>exom-app</binary>
+  </provides>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">moderate</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="0.1.0" date="2024-01-01">
+      <description>
+        <p>Initial release</p>
+      </description>
+    </release>
+  </releases>
+</component>
