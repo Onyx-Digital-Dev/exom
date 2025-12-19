@@ -308,6 +308,22 @@ const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 12,
+        description: "Add composite indexes for associates bidirectional queries",
+        sql: r#"
+            -- Composite indexes for efficient bidirectional associate lookups
+            -- Used by is_associate() which queries: WHERE status = 'accepted' AND (...)
+            CREATE INDEX IF NOT EXISTS idx_associates_status_requester
+                ON associates(status, requester_id);
+            CREATE INDEX IF NOT EXISTS idx_associates_status_target
+                ON associates(status, target_id);
+
+            -- Index on archive_config.enabled for quick filtering
+            CREATE INDEX IF NOT EXISTS idx_archive_config_enabled
+                ON archive_config(enabled);
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

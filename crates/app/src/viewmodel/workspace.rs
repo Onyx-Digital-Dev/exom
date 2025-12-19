@@ -73,12 +73,17 @@ impl WorkspaceManager {
     }
 
     /// Save workspace state to DB
+    #[allow(dead_code)]
     pub fn save_workspace(&self, hall_id: Uuid, state: &AppState) {
         if let (Some(workspace), Some(user_id)) =
             (self.workspaces.get(&hall_id), state.current_user_id())
         {
             let persisted = workspace.to_persisted(user_id);
-            if let Err(e) = state.db.lock().unwrap().workspaces().save(&persisted) {
+            let db = match state.db.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if let Err(e) = db.workspaces().save(&persisted) {
                 tracing::warn!(error = %e, "Failed to save workspace state");
             }
         }
@@ -380,12 +385,16 @@ pub fn init_workspace_for_hall(
 }
 
 /// Save workspace state (call after significant changes)
+#[allow(dead_code)]
 pub fn save_workspace_state(
     workspace_manager: &Arc<Mutex<WorkspaceManager>>,
     state: &Arc<AppState>,
     hall_id: Uuid,
 ) {
-    let wm = workspace_manager.lock().unwrap();
+    let wm = match workspace_manager.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
     wm.save_workspace(hall_id, state);
 }
 

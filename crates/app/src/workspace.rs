@@ -118,6 +118,7 @@ impl FileEntry {
     }
 
     /// Determine if this is a text file based on extension
+    #[allow(dead_code)]
     pub fn is_text(&self) -> bool {
         if self.is_directory {
             return false;
@@ -135,6 +136,7 @@ impl FileEntry {
     }
 
     /// Determine if this is a media file
+    #[allow(dead_code)]
     pub fn is_media(&self) -> bool {
         if self.is_directory {
             return false;
@@ -366,6 +368,7 @@ impl WorkspaceState {
     // ===== Persistence (K1) =====
 
     /// Convert workspace state to persisted format for saving
+    #[allow(dead_code)]
     pub fn to_persisted(&self, user_id: uuid::Uuid) -> exom_core::PersistedWorkspace {
         let tabs = self
             .tabs

@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
@@ -12,6 +12,23 @@ use exom_net::{CurrentTool, PresenceStatus};
 use uuid::Uuid;
 
 use crate::external_tools::{ExternalToolRuntime, SharedToolRuntime};
+
+/// Helper trait for safe mutex locking that recovers from poisoned locks
+pub trait SafeLock<T> {
+    fn safe_lock(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> SafeLock<T> for Mutex<T> {
+    fn safe_lock(&self) -> MutexGuard<'_, T> {
+        match self.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!("Mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        }
+    }
+}
 
 /// Ephemeral system message (not persisted)
 #[derive(Debug, Clone)]

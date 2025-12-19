@@ -3,6 +3,7 @@
 //! Minimal runtime for first-party bots. Capability enforcement happens here.
 //! Bots interact with Exom only through the skeleton defined in exom_core::bot.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use chrono::Local;
@@ -50,7 +51,8 @@ impl BotRuntime {
     /// Dispatch an event to all bots that can receive it
     pub fn dispatch(&mut self, event: &BotEvent) {
         // Collect all actions first to avoid borrow issues
-        let mut all_actions: Vec<(String, BotAction)> = Vec::new();
+        // Include the bot's capabilities for enforcement during execution
+        let mut all_actions: Vec<(String, HashSet<BotCapability>, BotAction)> = Vec::new();
 
         for bot in &mut self.bots {
             // Capability check - only deliver if bot has required capability
@@ -60,21 +62,34 @@ impl BotRuntime {
 
             // Get actions from bot
             let bot_id = bot.manifest().id.clone();
+            let bot_caps: HashSet<BotCapability> =
+                bot.manifest().capabilities.iter().copied().collect();
             let actions = bot.on_event(event);
 
             for action in actions {
-                all_actions.push((bot_id.clone(), action));
+                all_actions.push((bot_id.clone(), bot_caps.clone(), action));
             }
         }
 
         // Execute actions after the mutable borrow is released
-        for (bot_id, action) in all_actions {
-            self.execute_action(bot_id, &action);
+        for (bot_id, bot_caps, action) in all_actions {
+            self.execute_action(&bot_id, &bot_caps, &action);
         }
     }
 
     /// Execute a bot action with capability enforcement
-    fn execute_action(&self, bot_id: String, action: &BotAction) {
+    fn execute_action(&self, bot_id: &str, bot_caps: &HashSet<BotCapability>, action: &BotAction) {
+        // CRITICAL: Enforce capability check before executing any action
+        let required_cap = action.required_capability();
+        if !bot_caps.contains(&required_cap) {
+            tracing::warn!(
+                bot_id = %bot_id,
+                required = ?required_cap,
+                "Bot attempted action without required capability - DENIED"
+            );
+            return;
+        }
+
         match action {
             BotAction::EmitSystemMessage { hall_id, content } => {
                 // Add ephemeral system message
@@ -90,8 +105,14 @@ impl BotRuntime {
                 path,
                 contents,
             } => {
-                // Write file to hall chest
-                let chest = self.state.chest.lock().unwrap();
+                // Write file to hall chest - use safe mutex handling
+                let chest = match self.state.chest.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        tracing::error!(bot_id = %bot_id, "Chest mutex poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
                 match chest.write_file(*hall_id, path, contents) {
                     Ok(file_path) => {
                         tracing::info!(
@@ -116,16 +137,22 @@ impl BotRuntime {
                 tool_id,
                 command,
                 args,
-                cwd: _cwd, // TODO: support working directory
+                cwd: _cwd,
             } => {
                 // Spawn external tool (opens in NEW WINDOW - not embedded)
-                let mut tools = self.state.tools.lock().unwrap();
+                let mut tools = match self.state.tools.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        tracing::error!(bot_id = %bot_id, "Tools mutex poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
                 match tools.launch(
                     *hall_id,
                     tool_id.clone(),
                     command,
                     args,
-                    Some(bot_id.clone()),
+                    Some(bot_id.to_string()),
                 ) {
                     Ok(id) => {
                         tracing::info!(
@@ -148,8 +175,14 @@ impl BotRuntime {
                 }
             }
             BotAction::StopExternalTool { hall_id, tool_id } => {
-                // Stop a running tool
-                let mut tools = self.state.tools.lock().unwrap();
+                // Stop a running tool - use safe mutex handling
+                let mut tools = match self.state.tools.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        tracing::error!(bot_id = %bot_id, "Tools mutex poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
                 match tools.stop_by_id(tool_id) {
                     Ok(()) => {
                         tracing::info!(
@@ -183,9 +216,15 @@ impl BotRuntime {
 
     /// Handle member joined event
     pub fn on_member_joined(&mut self, hall_id: Uuid, user_id: Uuid, username: String) {
-        // Look up last_seen to determine if first time
+        // Look up last_seen to determine if first time - use safe mutex handling
         let (is_first_time, last_seen_duration) = {
-            let db = self.state.db.lock().unwrap();
+            let db = match self.state.db.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::error!("DB mutex poisoned in on_member_joined, recovering");
+                    poisoned.into_inner()
+                }
+            };
             match db.last_seen().get_duration_since(hall_id, user_id) {
                 Ok(Some(duration)) => (false, Some(duration)),
                 Ok(None) => (true, None),
@@ -240,8 +279,10 @@ impl BotRuntime {
             // Try to handle the command
             if let Some(actions) = bot.handle_command(hall_id, user_id, message) {
                 let bot_id = bot.manifest().id.clone();
+                let bot_caps: HashSet<BotCapability> =
+                    bot.manifest().capabilities.iter().copied().collect();
                 for action in actions {
-                    self.execute_action(bot_id.clone(), &action);
+                    self.execute_action(&bot_id, &bot_caps, &action);
                 }
                 return true;
             }
