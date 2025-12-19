@@ -2,12 +2,13 @@
 
 use std::sync::{Arc, Mutex};
 
+use exom_net::CurrentTool;
 use slint::{ComponentHandle, ModelRc, VecModel};
 use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::workspace::{LauncherAction, ToolType, WorkspaceState, LAUNCHER_ACTIONS};
-use crate::{LauncherItem, MainWindow, TabItem, FileItem};
+use crate::{FileItem, LauncherItem, MainWindow, TabItem};
 
 /// Workspace manager - holds per-hall workspace state
 pub struct WorkspaceManager {
@@ -23,7 +24,36 @@ impl WorkspaceManager {
         }
     }
 
-    /// Get or create workspace for a hall
+    /// Get or create workspace for a hall, optionally restoring from persistence
+    pub fn get_or_create_with_restore(
+        &mut self,
+        hall_id: Uuid,
+        state: &AppState,
+    ) -> &mut WorkspaceState {
+        if !self.workspaces.contains_key(&hall_id) {
+            // Try to restore from DB first
+            let mut workspace = WorkspaceState::new(hall_id, &self.data_dir);
+
+            if let Some(user_id) = state.current_user_id() {
+                if let Ok(Some(persisted)) = state
+                    .db
+                    .lock()
+                    .unwrap()
+                    .workspaces()
+                    .load(hall_id, user_id)
+                {
+                    workspace.restore_from_persisted(&persisted);
+                    tracing::info!(hall_id = %hall_id, tabs = persisted.tabs.len(), "Restored workspace");
+                }
+            }
+
+            self.workspaces.insert(hall_id, workspace);
+        }
+
+        self.workspaces.get_mut(&hall_id).unwrap()
+    }
+
+    /// Get or create workspace for a hall (without restore - for fallback)
     pub fn get_or_create(&mut self, hall_id: Uuid) -> &mut WorkspaceState {
         self.workspaces
             .entry(hall_id)
@@ -39,6 +69,18 @@ impl WorkspaceManager {
     /// Get mutable workspace for a hall
     pub fn get_mut(&mut self, hall_id: Uuid) -> Option<&mut WorkspaceState> {
         self.workspaces.get_mut(&hall_id)
+    }
+
+    /// Save workspace state to DB
+    pub fn save_workspace(&self, hall_id: Uuid, state: &AppState) {
+        if let (Some(workspace), Some(user_id)) =
+            (self.workspaces.get(&hall_id), state.current_user_id())
+        {
+            let persisted = workspace.to_persisted(user_id);
+            if let Err(e) = state.db.lock().unwrap().workspaces().save(&persisted) {
+                tracing::warn!(error = %e, "Failed to save workspace state");
+            }
+        }
     }
 
     /// Close workspace for a hall (kills all processes)
@@ -250,14 +292,15 @@ pub fn setup_workspace_bindings(
     std::mem::forget(timer);
 }
 
-/// Initialize workspace when hall is selected
+/// Initialize workspace when hall is selected (with persistence restore)
 pub fn init_workspace_for_hall(
     window: &MainWindow,
     workspace_manager: &Arc<Mutex<WorkspaceManager>>,
+    state: &Arc<AppState>,
     hall_id: Uuid,
 ) {
     let mut wm = workspace_manager.lock().unwrap();
-    let workspace = wm.get_or_create(hall_id);
+    let workspace = wm.get_or_create_with_restore(hall_id, state);
 
     // Initialize files if Files tab exists
     if workspace.tabs().iter().any(|t| t.tool_type == ToolType::Files) {
@@ -266,6 +309,29 @@ pub fn init_workspace_for_hall(
 
     refresh_tabs(window, workspace);
     refresh_workspace_view(window, workspace);
+
+    // Update local tool based on active tab
+    if let Some(tab) = workspace.active_tab() {
+        let tool = match tab.tool_type {
+            ToolType::Chat => CurrentTool::Chat,
+            ToolType::Terminal => CurrentTool::Terminal,
+            ToolType::Files => CurrentTool::Files,
+        };
+        state.set_local_tool(tool);
+    }
+
+    // Save last hall for auto-enter (K4)
+    state.save_last_hall(hall_id);
+}
+
+/// Save workspace state (call after significant changes)
+pub fn save_workspace_state(
+    workspace_manager: &Arc<Mutex<WorkspaceManager>>,
+    state: &Arc<AppState>,
+    hall_id: Uuid,
+) {
+    let wm = workspace_manager.lock().unwrap();
+    wm.save_workspace(hall_id, state);
 }
 
 /// Refresh tab bar

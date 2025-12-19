@@ -43,6 +43,54 @@ impl NetRole {
     }
 }
 
+/// Presence status for a peer
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceStatus {
+    #[default]
+    Active,
+    Idle,
+    Away,
+}
+
+impl PresenceStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            PresenceStatus::Active => "Active",
+            PresenceStatus::Idle => "Idle",
+            PresenceStatus::Away => "Away",
+        }
+    }
+}
+
+/// Current tool a peer is using
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CurrentTool {
+    #[default]
+    Chat,
+    Terminal,
+    Files,
+}
+
+impl CurrentTool {
+    pub fn label(self) -> &'static str {
+        match self {
+            CurrentTool::Chat => "Chat",
+            CurrentTool::Terminal => "Terminal",
+            CurrentTool::Files => "Files",
+        }
+    }
+
+    pub fn activity_label(self) -> &'static str {
+        match self {
+            CurrentTool::Chat => "in Chat",
+            CurrentTool::Terminal => "in Terminal",
+            CurrentTool::Files => "browsing Files",
+        }
+    }
+}
+
 /// Information about a connected peer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerInfo {
@@ -50,6 +98,10 @@ pub struct PeerInfo {
     pub username: String,
     pub role: NetRole,
     pub is_host: bool,
+    #[serde(default)]
+    pub presence: PresenceStatus,
+    #[serde(default)]
+    pub current_tool: CurrentTool,
 }
 
 /// A chat message transmitted over the network
@@ -151,6 +203,13 @@ pub enum Message {
         hall_id: Uuid,
         from_sequence: u64,
         messages: Vec<NetMessage>,
+    },
+
+    /// Presence update from a peer (K2/K3: always-on presence)
+    PresenceUpdate {
+        user_id: Uuid,
+        presence: PresenceStatus,
+        current_tool: CurrentTool,
     },
 }
 

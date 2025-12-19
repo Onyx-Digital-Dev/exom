@@ -502,6 +502,91 @@ impl WorkspaceState {
             process.kill();
         }
     }
+
+    // ===== Persistence (K1) =====
+
+    /// Convert workspace state to persisted format for saving
+    pub fn to_persisted(&self, user_id: uuid::Uuid) -> exom_core::PersistedWorkspace {
+        let tabs = self
+            .tabs
+            .iter()
+            .map(|tab| exom_core::PersistedTab {
+                id: tab.id.to_string(),
+                tool_type: tab.tool_type.label().to_string(),
+                title: tab.title.clone(),
+            })
+            .collect();
+
+        // Get terminal cwd if active tab is terminal
+        let terminal_cwd = self.active_tab().and_then(|tab| {
+            if tab.tool_type == ToolType::Terminal {
+                // For now, use the files path as cwd hint
+                Some(self.files_current_path.display().to_string())
+            } else {
+                None
+            }
+        });
+
+        exom_core::PersistedWorkspace {
+            hall_id: self.hall_id,
+            user_id,
+            tabs,
+            active_tab_id: self.active_tab_id.map(|id| id.to_string()),
+            terminal_cwd,
+        }
+    }
+
+    /// Restore workspace state from persisted format
+    pub fn restore_from_persisted(&mut self, persisted: &exom_core::PersistedWorkspace) {
+        // Clear existing tabs except Chat
+        self.tabs.retain(|t| t.tool_type == ToolType::Chat);
+
+        // Restore tabs
+        for ptab in &persisted.tabs {
+            let tool_type = match ptab.tool_type.as_str() {
+                "Chat" => continue, // Already have Chat
+                "Terminal" => ToolType::Terminal,
+                "Files" => ToolType::Files,
+                _ => continue,
+            };
+
+            let tab_id = uuid::Uuid::parse_str(&ptab.id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+            let tab = Tab {
+                id: tab_id,
+                tool_type,
+                title: ptab.title.clone(),
+            };
+            self.tabs.push(tab);
+
+            // Spawn terminal process for Terminal tabs
+            if tool_type == ToolType::Terminal {
+                if let Ok(mut process) = TerminalProcess::spawn() {
+                    // If we have a cwd hint, try to cd there
+                    if let Some(ref cwd) = persisted.terminal_cwd {
+                        let _ = process.send_input(&format!("cd {}", cwd));
+                    }
+                    self.terminals.insert(tab_id, process);
+                }
+            }
+        }
+
+        // Restore active tab
+        if let Some(ref active_id) = persisted.active_tab_id {
+            if let Ok(id) = uuid::Uuid::parse_str(active_id) {
+                if self.tabs.iter().any(|t| t.id == id) {
+                    self.active_tab_id = Some(id);
+                }
+            }
+        }
+
+        // Restore terminal cwd for file browsing
+        if let Some(ref cwd) = persisted.terminal_cwd {
+            let path = std::path::PathBuf::from(cwd);
+            if path.exists() {
+                self.files_current_path = path;
+            }
+        }
+    }
 }
 
 impl Drop for WorkspaceState {

@@ -232,8 +232,8 @@ pub fn setup_hall_bindings(
             w.invoke_load_messages();
             w.invoke_load_members();
 
-            // Initialize workspace for this hall
-            init_workspace_for_hall(&w, &workspace_manager_select, hall_id);
+            // Initialize workspace for this hall (with persistence restore)
+            init_workspace_for_hall(&w, &workspace_manager_select, &state_select, hall_id);
         }
     });
 

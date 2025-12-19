@@ -8,6 +8,7 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use exom_core::{Database, Error, HallChest, Result};
+use exom_net::{CurrentTool, PresenceStatus};
 use uuid::Uuid;
 
 /// Ephemeral system message (not persisted)
@@ -24,6 +25,15 @@ pub struct SystemMessage {
 pub struct TrackedMember {
     pub user_id: Uuid,
     pub username: String,
+}
+
+/// Member presence info for K2/K3
+#[derive(Debug, Clone)]
+pub struct MemberPresence {
+    pub user_id: Uuid,
+    pub username: String,
+    pub presence: PresenceStatus,
+    pub current_tool: CurrentTool,
 }
 
 /// Main application state
@@ -43,6 +53,14 @@ pub struct AppState {
     pub typing_users: Arc<Mutex<HashMap<Uuid, (String, Instant)>>>,
     /// Member last activity timestamps: user_id -> last_active_time
     pub member_activity: Arc<Mutex<HashMap<Uuid, Instant>>>,
+    /// Member presence info: user_id -> presence state (K2/K3)
+    pub member_presence: Arc<Mutex<HashMap<Uuid, MemberPresence>>>,
+    /// Local user's last activity time for idle detection
+    pub last_local_activity: Arc<Mutex<Instant>>,
+    /// Local user's current tool
+    pub local_current_tool: Arc<Mutex<CurrentTool>>,
+    /// Local user's presence status
+    pub local_presence: Arc<Mutex<PresenceStatus>>,
 }
 
 impl AppState {
@@ -68,6 +86,10 @@ impl AppState {
             pending_messages: Arc::new(Mutex::new(HashSet::new())),
             typing_users: Arc::new(Mutex::new(HashMap::new())),
             member_activity: Arc::new(Mutex::new(HashMap::new())),
+            member_presence: Arc::new(Mutex::new(HashMap::new())),
+            last_local_activity: Arc::new(Mutex::new(Instant::now())),
+            local_current_tool: Arc::new(Mutex::new(CurrentTool::Chat)),
+            local_presence: Arc::new(Mutex::new(PresenceStatus::Active)),
         })
     }
 
@@ -315,6 +337,117 @@ impl AppState {
     #[allow(dead_code)]
     pub fn clear_member_activity(&self) {
         self.member_activity.lock().unwrap().clear();
+    }
+
+    // ===== Presence tracking (K2/K3) =====
+
+    /// Update member presence from network
+    pub fn update_member_presence(
+        &self,
+        user_id: Uuid,
+        username: String,
+        presence: PresenceStatus,
+        current_tool: CurrentTool,
+    ) {
+        self.member_presence.lock().unwrap().insert(
+            user_id,
+            MemberPresence {
+                user_id,
+                username,
+                presence,
+                current_tool,
+            },
+        );
+    }
+
+    /// Get member presence info
+    pub fn get_member_presence(&self, user_id: Uuid) -> Option<MemberPresence> {
+        self.member_presence.lock().unwrap().get(&user_id).cloned()
+    }
+
+    /// Get all member presences
+    pub fn get_all_presences(&self) -> Vec<MemberPresence> {
+        self.member_presence.lock().unwrap().values().cloned().collect()
+    }
+
+    /// Clear presence for a user (e.g., when they leave)
+    pub fn clear_member_presence(&self, user_id: Uuid) {
+        self.member_presence.lock().unwrap().remove(&user_id);
+    }
+
+    /// Clear all presence data (e.g., when switching halls)
+    pub fn clear_all_presence(&self) {
+        self.member_presence.lock().unwrap().clear();
+    }
+
+    /// Record local activity (resets idle timer)
+    pub fn record_local_activity(&self) {
+        *self.last_local_activity.lock().unwrap() = Instant::now();
+        // Also reset to Active if was Idle
+        let mut presence = self.local_presence.lock().unwrap();
+        if *presence == PresenceStatus::Idle {
+            *presence = PresenceStatus::Active;
+        }
+    }
+
+    /// Check if local user is idle (no activity for 60s)
+    pub fn check_idle(&self) -> bool {
+        const IDLE_THRESHOLD_SECS: u64 = 60;
+        let last = self.last_local_activity.lock().unwrap();
+        last.elapsed().as_secs() >= IDLE_THRESHOLD_SECS
+    }
+
+    /// Set local presence status
+    pub fn set_local_presence(&self, presence: PresenceStatus) {
+        *self.local_presence.lock().unwrap() = presence;
+    }
+
+    /// Get local presence status
+    pub fn get_local_presence(&self) -> PresenceStatus {
+        *self.local_presence.lock().unwrap()
+    }
+
+    /// Set local current tool
+    pub fn set_local_tool(&self, tool: CurrentTool) {
+        *self.local_current_tool.lock().unwrap() = tool;
+    }
+
+    /// Get local current tool
+    pub fn get_local_tool(&self) -> CurrentTool {
+        *self.local_current_tool.lock().unwrap()
+    }
+
+    /// Check if presence has changed and needs broadcast
+    /// Returns (should_broadcast, new_presence) if changed
+    pub fn check_presence_change(&self) -> Option<PresenceStatus> {
+        let is_idle = self.check_idle();
+        let current = self.get_local_presence();
+
+        // Only transition Active -> Idle automatically
+        // Away is set explicitly (e.g., window blur)
+        if is_idle && current == PresenceStatus::Active {
+            self.set_local_presence(PresenceStatus::Idle);
+            return Some(PresenceStatus::Idle);
+        }
+
+        None
+    }
+
+    // ===== Preferences (K4) =====
+
+    /// Save last hall ID for auto-enter
+    pub fn save_last_hall(&self, hall_id: Uuid) {
+        if let Some(user_id) = self.current_user_id() {
+            let db = self.db.lock().unwrap();
+            let _ = db.preferences().set_last_hall(user_id, hall_id);
+        }
+    }
+
+    /// Get last hall ID for auto-enter
+    pub fn get_last_hall(&self) -> Option<Uuid> {
+        let user_id = self.current_user_id()?;
+        let db = self.db.lock().unwrap();
+        db.preferences().get_last_hall(user_id).ok().flatten()
     }
 }
 

@@ -147,6 +147,31 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_messages_sequence ON messages(hall_id, sequence);
         "#,
     },
+    Migration {
+        version: 5,
+        description: "Add workspace state persistence and presence tracking",
+        sql: r#"
+            -- Workspace state per hall (session continuity)
+            CREATE TABLE IF NOT EXISTS workspace_state (
+                hall_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                tabs_json TEXT NOT NULL,
+                active_tab_id TEXT,
+                terminal_cwd TEXT,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            -- User preferences (last hall, settings)
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                user_id TEXT PRIMARY KEY,
+                last_hall_id TEXT,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

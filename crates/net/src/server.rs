@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::frame::{read_frame, write_frame};
-use crate::protocol::{Message, NetRole, PeerInfo};
+use crate::protocol::{CurrentTool, Message, NetRole, PeerInfo, PresenceStatus};
 
 use chrono::Utc;
 
@@ -36,6 +36,8 @@ struct Peer {
     username: String,
     role: NetRole,
     tx: mpsc::Sender<Message>,
+    presence: PresenceStatus,
+    current_tool: CurrentTool,
 }
 
 /// Server state shared across tasks
@@ -60,6 +62,8 @@ impl ServerState {
                 username: p.username.clone(),
                 role: p.role,
                 is_host: p.user_id == self.host_id,
+                presence: p.presence,
+                current_tool: p.current_tool,
             })
             .collect()
     }
@@ -100,6 +104,8 @@ impl Server {
                 username: host_username,
                 role: host_role,
                 tx: host_tx,
+                presence: PresenceStatus::Active,
+                current_tool: CurrentTool::Chat,
             },
         );
 
@@ -328,6 +334,8 @@ async fn handle_join(
                     username,
                     role,
                     tx: tx.clone(),
+                    presence: PresenceStatus::Active,
+                    current_tool: CurrentTool::Chat,
                 },
             );
 
@@ -440,6 +448,32 @@ async fn handle_message(msg: Message, sender_id: Uuid, state: &Arc<RwLock<Server
                     })
                     .await;
             }
+        }
+        Message::PresenceUpdate {
+            user_id,
+            presence,
+            current_tool,
+        } => {
+            // Update peer's presence state
+            {
+                let mut s = state.write().await;
+                if let Some(peer) = s.peers.get_mut(&user_id) {
+                    peer.presence = presence;
+                    peer.current_tool = current_tool;
+                }
+            }
+
+            // Broadcast to all peers except sender
+            broadcast_to_peers(
+                state,
+                Message::PresenceUpdate {
+                    user_id,
+                    presence,
+                    current_tool,
+                },
+                Some(sender_id),
+            )
+            .await;
         }
         _ => {
             debug!(sender_id = %sender_id, "Ignoring unexpected message type");

@@ -36,7 +36,7 @@ pub mod server;
 pub use client::{Client, ConnectionState, ServerEvent};
 pub use error::{Error, Result};
 pub use invite::InviteUrl;
-pub use protocol::{Message, NetMessage, NetRole, PeerInfo};
+pub use protocol::{CurrentTool, Message, NetMessage, NetRole, PeerInfo, PresenceStatus};
 pub use server::Server;
 
 /// Default port for Exom servers

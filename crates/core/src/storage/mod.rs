@@ -6,8 +6,10 @@ mod invites;
 mod messages;
 mod migrations;
 mod parse;
+mod preferences;
 mod traits;
 mod users;
+mod workspace;
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -24,8 +26,10 @@ pub use connections::{ConnectionStore, LastConnection};
 pub use halls::HallStore;
 pub use invites::InviteStore;
 pub use messages::MessageStore;
+pub use preferences::{PreferencesStore, UserPreferences};
 pub use traits::{HallRepository, InviteRepository, MessageRepository, Storage, UserRepository};
 pub use users::UserStore;
+pub use workspace::{PersistedTab, PersistedWorkspace, WorkspaceStore};
 
 /// Main database handle
 pub struct Database {
@@ -91,6 +95,16 @@ impl Database {
     /// Get connection store for auto-reconnect
     pub fn connections(&self) -> ConnectionStore<'_> {
         ConnectionStore::new(&self.conn)
+    }
+
+    /// Get workspace store for session continuity
+    pub fn workspaces(&self) -> WorkspaceStore<'_> {
+        WorkspaceStore::new(&self.conn)
+    }
+
+    /// Get preferences store for user settings
+    pub fn preferences(&self) -> PreferencesStore<'_> {
+        PreferencesStore::new(&self.conn)
     }
 }
 
