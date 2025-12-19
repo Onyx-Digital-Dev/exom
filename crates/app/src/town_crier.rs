@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use std::any::Any;
+
 use exom_core::{Bot, BotAction, BotCapability, BotEvent, BotManifest, Database};
 use rand::seq::SliceRandom;
 use uuid::Uuid;
@@ -120,6 +122,10 @@ impl Bot for TownCrier {
         &self.manifest
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
     fn on_event(&mut self, event: &BotEvent) -> Vec<BotAction> {
         // Check capability
         if !self.should_receive(event) {
@@ -171,6 +177,8 @@ impl Bot for TownCrier {
                     content: message,
                 }]
             }
+            // Town Crier doesn't handle scheduled ticks
+            BotEvent::ScheduledTick { .. } => Vec::new(),
         }
     }
 }

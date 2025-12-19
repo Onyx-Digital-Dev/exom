@@ -1,5 +1,6 @@
 //! SQLite storage layer for Exom
 
+mod archive;
 mod connections;
 mod halls;
 mod invites;
@@ -23,6 +24,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use tracing::instrument;
 
+pub use archive::{ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow};
 pub use connections::{ConnectionStore, LastConnection};
 pub use halls::HallStore;
 pub use invites::InviteStore;
@@ -112,6 +114,11 @@ impl Database {
     /// Get last seen store for Town Crier bot
     pub fn last_seen(&self) -> LastSeenStore<'_> {
         LastSeenStore::new(&self.conn)
+    }
+
+    /// Get archive config store for Archivist bot
+    pub fn archive_config(&self) -> ArchiveConfigStore<'_> {
+        ArchiveConfigStore::new(&self.conn)
     }
 }
 

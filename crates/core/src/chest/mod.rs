@@ -209,6 +209,37 @@ impl HallChest {
         Ok(())
     }
 
+    /// Write a file to a Hall's chest
+    /// Creates parent directories as needed
+    #[instrument(skip(self, contents))]
+    pub fn write_file(&self, hall_id: Uuid, relative_path: &str, contents: &str) -> Result<PathBuf> {
+        let hall_path = self.hall_path(hall_id);
+        if !hall_path.exists() {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Hall chest does not exist",
+            )));
+        }
+
+        let file_path = hall_path.join(relative_path);
+
+        // Create parent directories
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Write file
+        fs::write(&file_path, contents)?;
+
+        tracing::info!(
+            hall_id = %hall_id,
+            path = %relative_path,
+            "Wrote file to chest"
+        );
+
+        Ok(file_path)
+    }
+
     /// Get the base path for display
     pub fn base_path(&self) -> &Path {
         &self.base_path

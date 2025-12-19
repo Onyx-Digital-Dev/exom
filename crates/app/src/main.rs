@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod archivist;
 mod bot_runtime;
 mod network;
 mod platform;

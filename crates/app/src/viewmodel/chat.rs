@@ -10,6 +10,7 @@ use exom_net::{NetMessage, NetRole};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use tokio::sync::Mutex;
 
+use crate::bot_runtime::BotRuntime;
 use crate::network::{NetworkManager, NetworkState};
 use crate::state::AppState;
 use crate::MainWindow;
@@ -77,6 +78,7 @@ pub fn setup_chat_bindings(
     window: &MainWindow,
     state: Arc<AppState>,
     _network_manager: Arc<Mutex<NetworkManager>>,
+    bot_runtime: Arc<StdMutex<BotRuntime>>,
 ) {
     // Load messages
     let state_load = state.clone();
@@ -236,6 +238,7 @@ pub fn setup_chat_bindings(
     // Send message
     let state_send = state.clone();
     let network_manager_send = _network_manager.clone();
+    let bot_runtime_send = bot_runtime.clone();
     let window_weak = window.as_weak();
     window.on_send_message(move |content| {
         let content = content.to_string().trim().to_string();
@@ -252,6 +255,20 @@ pub fn setup_chat_bindings(
             Some(id) => id,
             None => return,
         };
+
+        // Check for slash commands before treating as a regular message
+        if content.starts_with("/archive") || content.starts_with("/set-archive") {
+            if let Ok(mut runtime) = bot_runtime_send.try_lock() {
+                let handled = runtime.handle_command(hall_id, user_id, &content);
+                if handled {
+                    // Reload messages to show system response
+                    if let Some(w) = window_weak.upgrade() {
+                        w.invoke_load_messages();
+                    }
+                    return;
+                }
+            }
+        }
 
         let message = Message::new(hall_id, user_id, content.clone());
         let message_id = message.id;

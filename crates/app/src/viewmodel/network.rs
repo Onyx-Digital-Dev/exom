@@ -85,6 +85,29 @@ pub fn setup_network_bindings(
     // Keep timer alive
     std::mem::forget(typing_prune_timer);
 
+    // Set up a timer for bot scheduler ticks (every 60 seconds)
+    let window_weak = window.as_weak();
+    let state_clone = state.clone();
+    let bot_runtime_clone = bot_runtime.clone();
+    let scheduler_timer = slint::Timer::default();
+    scheduler_timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(60),
+        move || {
+            if let Some(hall_id) = state_clone.current_hall_id() {
+                if let Ok(mut runtime) = bot_runtime_clone.try_lock() {
+                    runtime.tick_scheduled(hall_id);
+                }
+                // Reload messages to show any archive notifications
+                if let Some(window) = window_weak.upgrade() {
+                    window.invoke_load_messages();
+                }
+            }
+        },
+    );
+    // Keep timer alive
+    std::mem::forget(scheduler_timer);
+
     // Copy invite callback
     let network_manager_clone = network_manager.clone();
     let window_weak = window.as_weak();
@@ -294,6 +317,11 @@ fn handle_network_event(
                 if reconciled > 0 {
                     tracing::debug!(count = reconciled, "Reconciled pending messages on connect");
                     window.invoke_load_messages();
+                }
+
+                // Check for missed archive runs and catch up
+                if let Ok(mut runtime) = bot_runtime.try_lock() {
+                    runtime.check_missed_runs(hall_id);
                 }
             }
         }

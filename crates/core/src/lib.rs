@@ -18,7 +18,7 @@ pub use hosting::*;
 pub use models::*;
 pub use permissions::*;
 pub use storage::{
-    Database, HallRepository, InviteRepository, LastConnection, LastSeen, LastSeenStore,
-    MessageRepository, PersistedTab, PersistedWorkspace, PreferencesStore, Storage,
-    UserPreferences, UserRepository, WorkspaceStore,
+    ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow, Database, HallRepository,
+    InviteRepository, LastConnection, LastSeen, LastSeenStore, MessageRepository, PersistedTab,
+    PersistedWorkspace, PreferencesStore, Storage, UserPreferences, UserRepository, WorkspaceStore,
 };

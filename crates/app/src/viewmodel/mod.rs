@@ -30,7 +30,12 @@ pub fn setup_bindings(
         network_manager.clone(),
         workspace_manager.clone(),
     );
-    chat::setup_chat_bindings(window, state.clone(), network_manager.clone());
+    chat::setup_chat_bindings(
+        window,
+        state.clone(),
+        network_manager.clone(),
+        bot_runtime.clone(),
+    );
     members::setup_member_bindings(window, state.clone());
     network::setup_network_bindings(window, state.clone(), network_manager.clone(), bot_runtime);
     workspace::setup_workspace_bindings(window, state.clone(), workspace_manager.clone());

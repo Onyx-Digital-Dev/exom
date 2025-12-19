@@ -2,6 +2,8 @@
 //!
 //! Minimal bot spine for first-party bots. No WASM yet - just native Rust bots.
 
+use std::any::Any;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -12,6 +14,12 @@ pub enum BotCapability {
     ListenPresence,
     /// Emit ephemeral system messages
     EmitSystem,
+    /// Read chat history for a hall
+    ReadChatHistory,
+    /// Write files to Hall Chest
+    WriteChest,
+    /// Receive scheduled tick events
+    ReceiveScheduledTick,
 }
 
 /// Bot manifest - describes a bot's identity and capabilities
@@ -44,6 +52,12 @@ pub enum BotEvent {
         user_id: Uuid,
         username: String,
     },
+    /// Scheduled tick for periodic bot tasks (e.g., nightly archiving)
+    ScheduledTick {
+        hall_id: Uuid,
+        /// Current local time as HHMM (e.g., 2200 for 10 PM)
+        current_time_hhmm: u16,
+    },
 }
 
 impl BotEvent {
@@ -53,6 +67,7 @@ impl BotEvent {
             BotEvent::MemberJoined { .. } | BotEvent::MemberLeft { .. } => {
                 BotCapability::ListenPresence
             }
+            BotEvent::ScheduledTick { .. } => BotCapability::ReceiveScheduledTick,
         }
     }
 }
@@ -62,6 +77,14 @@ impl BotEvent {
 pub enum BotAction {
     /// Emit an ephemeral system message
     EmitSystem { hall_id: Uuid, content: String },
+    /// Write a file to the Hall Chest
+    WriteFileToChest {
+        hall_id: Uuid,
+        /// Relative path within chest (e.g., "archives/ARCHIVE_2024-01-15.md")
+        path: String,
+        /// File contents
+        contents: String,
+    },
 }
 
 impl BotAction {
@@ -69,6 +92,7 @@ impl BotAction {
     pub fn required_capability(&self) -> BotCapability {
         match self {
             BotAction::EmitSystem { .. } => BotCapability::EmitSystem,
+            BotAction::WriteFileToChest { .. } => BotCapability::WriteChest,
         }
     }
 }
@@ -80,6 +104,9 @@ pub trait Bot: Send + Sync {
 
     /// Handle an event and return any actions
     fn on_event(&mut self, event: &BotEvent) -> Vec<BotAction>;
+
+    /// Enable downcasting for specific bot types
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Check if this bot has a capability
     fn has_capability(&self, cap: BotCapability) -> bool {

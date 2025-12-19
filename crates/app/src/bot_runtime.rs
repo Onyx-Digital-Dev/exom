@@ -4,9 +4,11 @@
 
 use std::sync::Arc;
 
+use chrono::Local;
 use exom_core::{Bot, BotAction, BotEvent};
 use uuid::Uuid;
 
+use crate::archivist::Archivist;
 use crate::state::AppState;
 use crate::town_crier::TownCrier;
 
@@ -14,6 +16,10 @@ use crate::town_crier::TownCrier;
 pub struct BotRuntime {
     bots: Vec<Box<dyn Bot>>,
     state: Arc<AppState>,
+    /// Index of Archivist bot for command handling
+    archivist_index: Option<usize>,
+    /// Last scheduled tick time (to avoid duplicate ticks in same minute)
+    last_tick_minute: Option<(u16, u16)>, // (hour * 100 + minute, day)
 }
 
 impl BotRuntime {
@@ -22,11 +28,19 @@ impl BotRuntime {
         let mut runtime = Self {
             bots: Vec::new(),
             state: state.clone(),
+            archivist_index: None,
+            last_tick_minute: None,
         };
 
         // Register Town Crier as built-in bot
         let town_crier = TownCrier::new(state.db.clone());
         runtime.register_bot(Box::new(town_crier));
+
+        // Register Archivist as built-in bot
+        let archivist = Archivist::new(state.db.clone());
+        let archivist_idx = runtime.bots.len();
+        runtime.register_bot(Box::new(archivist));
+        runtime.archivist_index = Some(archivist_idx);
 
         runtime
     }
@@ -79,16 +93,37 @@ impl BotRuntime {
                     "Bot emitted system message"
                 );
             }
+            BotAction::WriteFileToChest {
+                hall_id,
+                path,
+                contents,
+            } => {
+                // Write file to hall chest
+                let chest = self.state.chest.lock().unwrap();
+                match chest.write_file(*hall_id, path, contents) {
+                    Ok(file_path) => {
+                        tracing::info!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            path = %file_path.display(),
+                            "Bot wrote file to chest"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            bot_id = %bot_id,
+                            hall_id = %hall_id,
+                            error = %e,
+                            "Bot failed to write file to chest"
+                        );
+                    }
+                }
+            }
         }
     }
 
     /// Handle member joined event
-    pub fn on_member_joined(
-        &mut self,
-        hall_id: Uuid,
-        user_id: Uuid,
-        username: String,
-    ) {
+    pub fn on_member_joined(&mut self, hall_id: Uuid, user_id: Uuid, username: String) {
         // Look up last_seen to determine if first time
         let (is_first_time, last_seen_duration) = {
             let db = self.state.db.lock().unwrap();
@@ -119,5 +154,95 @@ impl BotRuntime {
         };
 
         self.dispatch(&event);
+    }
+
+    /// Handle a potential slash command from chat
+    /// Returns true if the message was a command that was handled
+    pub fn handle_command(&mut self, hall_id: Uuid, user_id: Uuid, message: &str) -> bool {
+        // Check if it's an archive command
+        if message.starts_with("/archive") || message.starts_with("/set-archive") {
+            if let Some(idx) = self.archivist_index {
+                // Get archivist and handle command
+                if let Some(archivist) = self.bots.get_mut(idx) {
+                    // Downcast to Archivist
+                    if let Some(archivist) = archivist.as_any_mut().downcast_mut::<Archivist>() {
+                        if let Some(action) = archivist.handle_command(hall_id, message, user_id) {
+                            self.execute_action("archivist".to_string(), &action);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Dispatch scheduled tick to bots
+    /// Called periodically (e.g., every minute) by the app
+    pub fn tick_scheduled(&mut self, hall_id: Uuid) {
+        let now = Local::now();
+        let current_hhmm = (now.format("%H").to_string().parse::<u16>().unwrap_or(0) * 100)
+            + now.format("%M").to_string().parse::<u16>().unwrap_or(0);
+        let current_day = now.format("%j").to_string().parse::<u16>().unwrap_or(0);
+
+        // Avoid duplicate ticks in the same minute
+        if let Some((last_hhmm, last_day)) = self.last_tick_minute {
+            if last_hhmm == current_hhmm && last_day == current_day {
+                return;
+            }
+        }
+        self.last_tick_minute = Some((current_hhmm, current_day));
+
+        let event = BotEvent::ScheduledTick {
+            hall_id,
+            current_time_hhmm: current_hhmm,
+        };
+
+        self.dispatch(&event);
+    }
+
+    /// Check for missed archive runs and catch up
+    /// Called on app startup
+    pub fn check_missed_runs(&mut self, hall_id: Uuid) {
+        // Get archive config for hall
+        let config = {
+            let db = self.state.db.lock().unwrap();
+            db.archive_config().get(hall_id).ok().flatten()
+        };
+
+        if let Some(config) = config {
+            if !config.enabled {
+                return;
+            }
+
+            // Check if we missed a run
+            if let Some(last_run) = config.last_run_at {
+                let now = chrono::Utc::now();
+                let hours_since = (now - last_run).num_hours();
+
+                // If more than 25 hours since last run, we missed one
+                if hours_since > 25 {
+                    tracing::info!(
+                        hall_id = %hall_id,
+                        hours_since = hours_since,
+                        "Catching up missed archive run"
+                    );
+
+                    // Trigger archive now
+                    if let Some(idx) = self.archivist_index {
+                        if let Some(archivist) = self.bots.get_mut(idx) {
+                            if let Some(archivist) = archivist.as_any_mut().downcast_mut::<Archivist>()
+                            {
+                                if let Some(action) =
+                                    archivist.handle_command(hall_id, "/archive-now", Uuid::nil())
+                                {
+                                    self.execute_action("archivist".to_string(), &action);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

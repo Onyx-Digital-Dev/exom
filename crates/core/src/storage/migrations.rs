@@ -187,6 +187,22 @@ const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 7,
+        description: "Add archive configuration for Archivist bot",
+        sql: r#"
+            -- Archive configuration per hall
+            CREATE TABLE IF NOT EXISTS archive_config (
+                hall_id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                archive_time INTEGER NOT NULL DEFAULT 2200,
+                archive_window TEXT NOT NULL DEFAULT '24h',
+                archive_output TEXT NOT NULL DEFAULT 'chest',
+                last_run_at TEXT,
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE
+            );
+        "#,
+    },
 ];
 
 /// Initialize the migrations table
