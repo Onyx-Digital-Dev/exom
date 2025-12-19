@@ -123,6 +123,17 @@ pub fn setup_network_bindings(
             }
         }
     });
+
+    // Regenerate invite callback (host only)
+    let network_manager_clone = network_manager.clone();
+    window.on_regenerate_invite(move || {
+        let nm = network_manager_clone.clone();
+        tokio::spawn(async move {
+            if let Ok(nm) = nm.try_lock() {
+                let _ = nm.regenerate_invite().await;
+            }
+        });
+    });
 }
 
 fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: NetworkEvent) {
@@ -335,6 +346,10 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                 ConnectionQuality::Poor => "Poor",
             };
             window.set_connection_quality(hint.into());
+        }
+        NetworkEvent::InviteChanged(new_url) => {
+            // Update the invite URL in the UI
+            window.set_invite_url(new_url.into());
         }
     }
 }

@@ -86,6 +86,8 @@ pub enum NetworkEvent {
     ReconnectRetry { attempt: u32, next_in_secs: u64 },
     /// Connection quality changed
     QualityChanged(ConnectionQuality),
+    /// Invite URL changed (after regeneration)
+    InviteChanged(String),
 }
 
 /// Network manager handle
@@ -154,6 +156,8 @@ enum NetworkCommand {
         username: String,
         is_typing: bool,
     },
+    /// Regenerate invite token (host only)
+    RegenerateInvite,
     Disconnect,
 }
 
@@ -306,6 +310,14 @@ impl NetworkManager {
         self.state.read().await.invite_url.clone()
     }
 
+    /// Regenerate invite token (host only)
+    pub async fn regenerate_invite(&self) -> Result<(), &'static str> {
+        self.cmd_tx
+            .send(NetworkCommand::RegenerateInvite)
+            .await
+            .map_err(|_| "Network task not running")
+    }
+
     /// Get connection info if connected
     pub async fn connection_info(&self) -> Option<ConnectionInfo> {
         let s = self.state.read().await;
@@ -453,6 +465,44 @@ async fn network_task(
                             server.broadcast(typing_msg).await;
                         } else if let Some(c) = &client {
                             let _ = c.send_typing(hall_id, user_id, username, is_typing).await;
+                        }
+                    }
+                    Some(NetworkCommand::RegenerateInvite) => {
+                        // Regenerate invite token (host only)
+                        // Get server info while holding read lock
+                        let (server_addr, hall_id) = {
+                            let s = state.read().await;
+                            if let Some(server) = &s.server {
+                                (Some(server.addr()), s.hall_id)
+                            } else {
+                                (None, None)
+                            }
+                        };
+
+                        if let (Some(addr), Some(hall_id)) = (server_addr, hall_id) {
+                            // Get server reference and regenerate
+                            let new_token = {
+                                let s = state.read().await;
+                                if let Some(server) = &s.server {
+                                    server.regenerate_token().await
+                                } else {
+                                    continue;
+                                }
+                            };
+
+                            // Build new invite URL
+                            let new_invite = InviteUrl::from_addr(addr, hall_id, new_token.clone());
+                            let invite_str = new_invite.to_url();
+
+                            // Update state
+                            {
+                                let mut s = state.write().await;
+                                s.invite_url = Some(invite_str.clone());
+                                s.token = Some(new_token);
+                            }
+
+                            // Notify UI
+                            let _ = event_tx.send(NetworkEvent::InviteChanged(invite_str)).await;
                         }
                     }
                     Some(NetworkCommand::Disconnect) => {

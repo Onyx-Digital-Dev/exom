@@ -172,6 +172,22 @@ impl Server {
         let _ = self.shutdown_tx.send(());
         info!("Server shutdown initiated");
     }
+
+    /// Regenerate the invite token, invalidating the old one
+    /// Returns the new token
+    pub async fn regenerate_token(&self) -> String {
+        let new_token = generate_token();
+        let mut state = self.state.write().await;
+        state.token = new_token.clone();
+        info!("Invite token regenerated");
+        new_token
+    }
+}
+
+/// Generate a random token for invites
+fn generate_token() -> String {
+    // Use UUID v4 which is cryptographically random
+    Uuid::new_v4().to_string().replace("-", "")[..16].to_string()
 }
 
 /// Accept incoming connections

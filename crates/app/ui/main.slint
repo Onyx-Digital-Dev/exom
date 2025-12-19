@@ -68,6 +68,7 @@ export component MainWindow inherits Window {
 
     // Network callbacks
     callback copy-invite();
+    callback regenerate-invite();
 
     // Auth callbacks
     callback login(string, string);
@@ -231,11 +232,13 @@ export component MainWindow inherits Window {
                 network-status: root.network-status;
                 is-network-connected: root.is-network-connected;
                 invite-url: root.invite-url;
+                is-host: root.current-host-name == root.current-username;
                 promote-member(id) => { root.promote-member(id); }
                 demote-member(id) => { root.demote-member(id); }
                 kick-member(id) => { root.kick-member(id); }
                 load-chest-files => { root.load-chest-files(); }
                 copy-invite => { root.copy-invite(); }
+                regenerate-invite => { root.regenerate-invite(); }
             }
 
             // Empty right panel placeholder
