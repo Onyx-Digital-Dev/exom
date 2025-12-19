@@ -222,6 +222,9 @@ pub fn setup_workspace_bindings(
             _ => return,
         };
 
+        // Store the name for desk status before we move it
+        let desk_label = launcher.name.clone();
+
         // Launch the tool
         let mut tools = state_clone.tools.lock().unwrap();
         match tools.launch(
@@ -233,6 +236,9 @@ pub fn setup_workspace_bindings(
         ) {
             Ok(id) => {
                 tracing::info!(tool_id = %id, "User launched pinned tool");
+                // Set desk status (voluntary: user explicitly launched a tool)
+                drop(tools); // Release lock before calling set_desk_status
+                state_clone.set_desk_status(&desk_label);
             }
             Err(e) => {
                 tracing::warn!(error = %e, "Failed to launch pinned tool");
@@ -317,6 +323,18 @@ pub fn setup_workspace_bindings(
 
                 // Cleanup external processes
                 workspace.cleanup_external_processes();
+            }
+
+            // Check if any user-launched tools are still running
+            // If not, clear desk status (tool exit -> clear desk)
+            let mut tools = state_clone.tools.lock().unwrap();
+            let running_count = tools.running_count(hall_id);
+            drop(tools);
+
+            if running_count == 0 {
+                // No running tools - clear desk status
+                // This is voluntary: status only set/cleared by user action
+                state_clone.clear_desk_status();
             }
         },
     );

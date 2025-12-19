@@ -14,6 +14,7 @@ export struct MemberItem {
     activity-hint: string,  // "Active", "5m", "2h", etc.
     presence: string,       // K2: "Active", "Idle", "Away"
     current-tool: string,   // K3: "in Chat", "in Terminal", "browsing Files"
+    desk-status: string,    // Privacy-first: " — at the Kitty desk" or empty
 }
 
 // Chest file data
@@ -212,8 +213,16 @@ export component MembersPanel inherits Rectangle {
                                         subtle: true;
                                     }
 
-                                    // K3: Show current tool when online and not you
-                                    if member.is-online && !member.is-you && member.current-tool != "": Text {
+                                    // Desk status (privacy-first: visible to same-hall members and associates only)
+                                    if member.desk-status != "": Text {
+                                        text: member.desk-status;
+                                        color: Theme.color-accent;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
+
+                                    // K3: Show current tool when online and not you (only if no desk status)
+                                    if member.is-online && !member.is-you && member.current-tool != "" && member.desk-status == "": Text {
                                         text: member.current-tool;
                                         color: Theme.color-text-muted;
                                         font-size: Theme.text-xs;

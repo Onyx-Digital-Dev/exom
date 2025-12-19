@@ -260,6 +260,54 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_pinned_launchers_hall ON pinned_launchers(hall_id);
         "#,
     },
+    Migration {
+        version: 10,
+        description: "Add global associates (mutual-only relationships)",
+        sql: r#"
+            -- Global associate relationships (not hall-scoped)
+            -- Associates are MUTUAL ONLY - both sides must accept
+            CREATE TABLE IF NOT EXISTS associates (
+                id TEXT PRIMARY KEY,
+                requester_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                -- pending, accepted, blocked
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE,
+                -- Enforce uniqueness regardless of direction (A-B same as B-A)
+                -- SQLite doesn't support CHECK with subquery, so we use a unique constraint
+                -- on the ordered pair (min, max) of user IDs
+                UNIQUE(requester_id, target_id)
+            );
+
+            -- Indexes for quick lookups
+            CREATE INDEX IF NOT EXISTS idx_associates_requester ON associates(requester_id);
+            CREATE INDEX IF NOT EXISTS idx_associates_target ON associates(target_id);
+            CREATE INDEX IF NOT EXISTS idx_associates_status ON associates(status);
+        "#,
+    },
+    Migration {
+        version: 11,
+        description: "Add voluntary desk status for privacy-first presence",
+        sql: r#"
+            -- Voluntary desk status per user
+            -- Set ONLY when user launches tool from Exom
+            -- NEVER inferred from OS focus, processes, or window titles
+            CREATE TABLE IF NOT EXISTS desk_status (
+                user_id TEXT PRIMARY KEY,
+                -- The desk label (e.g., "Kitty", "VS Code", "mpv")
+                desk_label TEXT NOT NULL,
+                -- When this desk was set
+                set_at TEXT NOT NULL,
+                -- Optional: which hall the tool was launched from (context only)
+                hall_id TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE SET NULL
+            );
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

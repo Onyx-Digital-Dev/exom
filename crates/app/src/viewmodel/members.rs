@@ -42,6 +42,12 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
                         (String::new(), String::new())
                     };
 
+                // Get desk status (visible to same-hall members)
+                let desk_status = state_load
+                    .get_desk_status(m.user_id)
+                    .map(|label| format!(" — at the {} desk", label))
+                    .unwrap_or_default();
+
                 MemberItem {
                     id: m.user_id.to_string().into(),
                     name: m.username.clone().into(),
@@ -52,6 +58,7 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
                     activity_hint: state_load.get_activity_hint(m.user_id).into(),
                     presence: presence.into(),
                     current_tool: current_tool.into(),
+                    desk_status: desk_status.into(),
                 }
             })
             .collect();

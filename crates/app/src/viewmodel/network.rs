@@ -552,6 +552,12 @@ fn update_network_members(window: &MainWindow, state: &Arc<AppState>, peers: &[P
                 p.current_tool,
             );
 
+            // Get desk status (visible to same-hall members)
+            let desk_status = state
+                .get_desk_status(p.user_id)
+                .map(|label| format!(" — at the {} desk", label))
+                .unwrap_or_default();
+
             MemberItem {
                 id: p.user_id.to_string().into(),
                 name: p.username.clone().into(),
@@ -562,6 +568,7 @@ fn update_network_members(window: &MainWindow, state: &Arc<AppState>, peers: &[P
                 activity_hint: state.get_activity_hint(p.user_id).into(),
                 presence: p.presence.label().into(),
                 current_tool: p.current_tool.activity_label().into(),
+                desk_status: desk_status.into(),
             }
         })
         .collect();

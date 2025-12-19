@@ -24,7 +24,8 @@ pub use hosting::*;
 pub use models::*;
 pub use permissions::*;
 pub use storage::{
-    ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow, BotConfigStore, Database,
+    ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow, Associate, AssociateRequest,
+    AssociateStatus, AssociateStore, BotConfigStore, Database, DeskStatus, DeskStatusStore,
     HallBot, HallBotConfig, HallRepository, InviteRepository, LastConnection, LastSeen,
     LastSeenStore, LauncherStore, MessageRepository, PersistedTab, PersistedWorkspace,
     PinnedLauncher, PreferencesStore, Storage, UserPreferences, UserRepository, WorkspaceStore,

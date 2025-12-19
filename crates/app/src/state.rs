@@ -454,6 +454,93 @@ impl AppState {
         let db = self.db.lock().unwrap();
         db.preferences().get_last_hall(user_id).ok().flatten()
     }
+
+    // ===== Desk Status (Privacy-first presence) =====
+
+    /// Set desk status when user launches a tool from Exom
+    /// This is VOLUNTARY - only set by explicit user action, never inferred
+    pub fn set_desk_status(&self, desk_label: &str) {
+        let user_id = match self.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let hall_id = self.current_hall_id();
+
+        let db = self.db.lock().unwrap();
+        if let Err(e) = db.desk_status().set_desk(user_id, desk_label, hall_id) {
+            tracing::warn!(error = %e, "Failed to set desk status");
+        } else {
+            tracing::debug!(
+                user_id = %user_id,
+                desk_label = %desk_label,
+                "Desk status set"
+            );
+        }
+    }
+
+    /// Clear desk status (when tool exits or user manually clears)
+    pub fn clear_desk_status(&self) {
+        let user_id = match self.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let db = self.db.lock().unwrap();
+        if let Err(e) = db.desk_status().clear_desk(user_id) {
+            tracing::warn!(error = %e, "Failed to clear desk status");
+        } else {
+            tracing::debug!(user_id = %user_id, "Desk status cleared");
+        }
+    }
+
+    /// Get current desk status for a user
+    pub fn get_desk_status(&self, user_id: Uuid) -> Option<String> {
+        let db = self.db.lock().unwrap();
+        db.desk_status()
+            .get_desk(user_id)
+            .ok()
+            .flatten()
+            .map(|d| d.desk_label)
+    }
+
+    /// Check if viewer can see target user's desk status
+    /// Visibility rules:
+    /// - Same hall: visible
+    /// - Mutual associates: visible
+    /// - Otherwise: hidden
+    pub fn can_view_desk_status(&self, viewer_id: Uuid, target_id: Uuid) -> bool {
+        // Same user always visible
+        if viewer_id == target_id {
+            return true;
+        }
+
+        let db = self.db.lock().unwrap();
+
+        // Check if mutual associates
+        if db.associates().is_associate(viewer_id, target_id).unwrap_or(false) {
+            return true;
+        }
+
+        // Check if in same hall (caller should check this separately for performance)
+        // For now, this method assumes the caller has already filtered by hall membership
+        // and is asking specifically about associate visibility
+        false
+    }
+
+    /// Get formatted desk status for display (with visibility check)
+    /// Returns " — at the {desk} desk" or empty string if not visible/not set
+    pub fn get_visible_desk_status(&self, viewer_id: Uuid, target_id: Uuid, same_hall: bool) -> String {
+        // Visibility check: same hall OR mutual associates
+        if !same_hall && !self.can_view_desk_status(viewer_id, target_id) {
+            return String::new();
+        }
+
+        // Get desk status
+        match self.get_desk_status(target_id) {
+            Some(desk_label) => format!(" — at the {} desk", desk_label),
+            None => String::new(),
+        }
+    }
 }
 
 /// Format elapsed duration as activity hint

@@ -1,8 +1,10 @@
 //! SQLite storage layer for Exom
 
 mod archive;
+mod associates;
 mod bot_config;
 mod connections;
+mod desk_status;
 mod halls;
 mod invites;
 mod last_seen;
@@ -27,12 +29,14 @@ use std::path::Path;
 use tracing::instrument;
 
 pub use archive::{ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow};
+pub use associates::{Associate, AssociateRequest, AssociateStatus, AssociateStore};
 pub use bot_config::{BotConfigStore, HallBot, HallBotConfig};
 pub use connections::{ConnectionStore, LastConnection};
-pub use launchers::{LauncherStore, PinnedLauncher};
+pub use desk_status::{DeskStatus, DeskStatusStore};
 pub use halls::HallStore;
 pub use invites::InviteStore;
 pub use last_seen::{LastSeen, LastSeenStore};
+pub use launchers::{LauncherStore, PinnedLauncher};
 pub use messages::MessageStore;
 pub use preferences::{PreferencesStore, UserPreferences};
 pub use traits::{HallRepository, InviteRepository, MessageRepository, Storage, UserRepository};
@@ -133,6 +137,16 @@ impl Database {
     /// Get launcher store for pinned launchers (external tools)
     pub fn launchers(&self) -> LauncherStore<'_> {
         LauncherStore::new(&self.conn)
+    }
+
+    /// Get associates store for global mutual relationships
+    pub fn associates(&self) -> AssociateStore<'_> {
+        AssociateStore::new(&self.conn)
+    }
+
+    /// Get desk status store for voluntary presence
+    pub fn desk_status(&self) -> DeskStatusStore<'_> {
+        DeskStatusStore::new(&self.conn)
     }
 }
 
