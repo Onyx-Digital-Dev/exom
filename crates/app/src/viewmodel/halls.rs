@@ -477,4 +477,86 @@ pub fn setup_hall_bindings(
             w.set_switcher_halls(ModelRc::from(model));
         }
     });
+
+    // K4: Request step-out (shows confirmation if needed)
+    let state_step_out = state.clone();
+    let window_weak = window.as_weak();
+    window.on_request_step_out(move || {
+        let user_id = match state_step_out.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let hall_id = match state_step_out.current_hall_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let db = state_step_out.db.lock().unwrap();
+
+        // Check if user is owner
+        let hall = match db.halls().find_by_id(hall_id) {
+            Ok(Some(h)) => h,
+            _ => return,
+        };
+
+        if hall.owner_id == user_id {
+            drop(db);
+            if let Some(w) = window_weak.upgrade() {
+                w.set_hall_error("You own this hall and cannot step out".into());
+            }
+            return;
+        }
+
+        // Check if user is host or last active member
+        let is_host = hall.current_host_id == Some(user_id);
+        let members = db.halls().list_members(hall_id).unwrap_or_default();
+        let online_count = members.iter().filter(|m| m.is_online).count();
+
+        drop(db);
+
+        // Determine warning message
+        let warning = if is_host && online_count > 1 {
+            "You are currently hosting this hall. Stepping out will end your hosting session."
+        } else if online_count <= 1 {
+            "You are the last active member. Others won't be able to connect until someone returns."
+        } else {
+            ""
+        };
+
+        if let Some(w) = window_weak.upgrade() {
+            w.set_step_out_warning(warning.into());
+            w.set_show_step_out_confirm(true);
+        }
+    });
+
+    // K4: Confirm step-out (actually leave)
+    let state_confirm = state.clone();
+    let window_weak = window.as_weak();
+    window.on_confirm_step_out(move || {
+        let user_id = match state_confirm.current_user_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let hall_id = match state_confirm.current_hall_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let db = state_confirm.db.lock().unwrap();
+
+        // Remove membership
+        let _ = db.halls().remove_member(user_id, hall_id);
+
+        drop(db);
+
+        state_confirm.set_current_hall(None);
+
+        if let Some(w) = window_weak.upgrade() {
+            w.set_current_hall_id("".into());
+            w.set_current_hall_name("".into());
+            w.invoke_load_halls();
+        }
+    });
 }

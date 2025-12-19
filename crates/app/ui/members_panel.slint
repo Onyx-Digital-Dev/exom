@@ -12,6 +12,8 @@ export struct MemberItem {
     is-host: bool,
     is-you: bool,
     activity-hint: string,  // "Active", "5m", "2h", etc.
+    presence: string,       // K2: "Active", "Idle", "Away"
+    current-tool: string,   // K3: "in Chat", "in Terminal", "browsing Files"
 }
 
 // Chest file data
@@ -210,10 +212,33 @@ export component MembersPanel inherits Rectangle {
                                         subtle: true;
                                     }
 
-                                    // Show activity hint or offline status
-                                    if member.activity-hint != "": Text {
+                                    // K3: Show current tool when online and not you
+                                    if member.is-online && !member.is-you && member.current-tool != "": Text {
+                                        text: member.current-tool;
+                                        color: Theme.color-text-muted;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
+
+                                    // K2: Show presence status (Idle/Away)
+                                    if member.is-online && member.presence == "Idle": Text {
+                                        text: "· idle";
+                                        color: Theme.color-text-dim;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if member.is-online && member.presence == "Away": Text {
+                                        text: "· away";
+                                        color: Theme.color-text-dim;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
+
+                                    // Show activity hint or offline status (fallback)
+                                    if !member.is-online && member.activity-hint != "": Text {
                                         text: member.activity-hint;
-                                        color: member.activity-hint == "Active" ? Theme.color-online : Theme.color-text-dim;
+                                        color: Theme.color-text-dim;
                                         font-size: Theme.text-xs;
                                         vertical-alignment: center;
                                     }

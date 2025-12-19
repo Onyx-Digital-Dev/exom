@@ -55,6 +55,7 @@ export component WorkspacePanel inherits Rectangle {
     callback terminal-send(string);
     callback files-navigate(string);
     callback files-open(string);
+    callback step-out();  // K4: Softer "leave hall"
 
     background: Theme.color-bg;
 
@@ -118,6 +119,29 @@ export component WorkspacePanel inherits Rectangle {
 
                 // Spacer
                 Rectangle { horizontal-stretch: 1; }
+
+                // Step out button (K4: softer "leave hall")
+                step-out-touch := TouchArea {
+                    width: 60px;
+                    height: 24px;
+
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: step-out-touch.has-hover ? Theme.color-panel-hover : transparent;
+                        border-radius: Theme.radius-sm;
+
+                        Text {
+                            text: "Step out";
+                            color: Theme.color-text-dim;
+                            font-size: Theme.text-xs;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    clicked => { root.step-out(); }
+                }
             }
         }
 

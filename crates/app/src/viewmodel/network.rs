@@ -508,14 +508,26 @@ fn update_network_members(window: &MainWindow, state: &Arc<AppState>, peers: &[P
 
     let member_items: Vec<MemberItem> = peers
         .iter()
-        .map(|p| MemberItem {
-            id: p.user_id.to_string().into(),
-            name: p.username.clone().into(),
-            role: net_role_display(p.role).into(),
-            is_online: true, // All network peers are online
-            is_host: p.is_host,
-            is_you: current_user_id == Some(p.user_id),
-            activity_hint: state.get_activity_hint(p.user_id).into(),
+        .map(|p| {
+            // Update state with peer's presence info (K2/K3)
+            state.update_member_presence(
+                p.user_id,
+                p.username.clone(),
+                p.presence,
+                p.current_tool,
+            );
+
+            MemberItem {
+                id: p.user_id.to_string().into(),
+                name: p.username.clone().into(),
+                role: net_role_display(p.role).into(),
+                is_online: true, // All network peers are online
+                is_host: p.is_host,
+                is_you: current_user_id == Some(p.user_id),
+                activity_hint: state.get_activity_hint(p.user_id).into(),
+                presence: p.presence.label().into(),
+                current_tool: p.current_tool.activity_label().into(),
+            }
         })
         .collect();
 

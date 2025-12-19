@@ -30,14 +30,29 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
 
         let member_items: Vec<MemberItem> = members
             .iter()
-            .map(|m| MemberItem {
-                id: m.user_id.to_string().into(),
-                name: m.username.clone().into(),
-                role: m.role.display_name().into(),
-                is_online: m.is_online,
-                is_host: m.is_host,
-                is_you: current_user_id == Some(m.user_id),
-                activity_hint: state_load.get_activity_hint(m.user_id).into(),
+            .map(|m| {
+                // Get presence info from state (K2/K3)
+                let (presence, current_tool) =
+                    if let Some(presence_info) = state_load.get_member_presence(m.user_id) {
+                        (
+                            presence_info.presence.label().to_string(),
+                            presence_info.current_tool.activity_label().to_string(),
+                        )
+                    } else {
+                        (String::new(), String::new())
+                    };
+
+                MemberItem {
+                    id: m.user_id.to_string().into(),
+                    name: m.username.clone().into(),
+                    role: m.role.display_name().into(),
+                    is_online: m.is_online,
+                    is_host: m.is_host,
+                    is_you: current_user_id == Some(m.user_id),
+                    activity_hint: state_load.get_activity_hint(m.user_id).into(),
+                    presence: presence.into(),
+                    current_tool: current_tool.into(),
+                }
             })
             .collect();
 

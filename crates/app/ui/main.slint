@@ -1,7 +1,7 @@
 // Exom Main Window
 
 import { Theme } from "theme.slint";
-import { VerticalSeparator, Button } from "components.slint";
+import { VerticalSeparator, Button, SecondaryButton } from "components.slint";
 import { AuthView } from "auth.slint";
 import { HallsPanel, HallItem } from "halls_panel.slint";
 import { ChatPanel, EmptyChatPanel, MessageItem } from "chat_panel.slint";
@@ -80,8 +80,16 @@ export component MainWindow inherits Window {
     in-out property <[LauncherItem]> launcher-items: [];
     in-out property <bool> show-launcher: false;
 
+    // Step-out state (K4)
+    in-out property <bool> show-step-out-confirm: false;
+    in-out property <string> step-out-warning: "";  // Warning message if host/last active
+
     // Switcher filtering callback
     callback filter-switcher-halls(string);
+
+    // Step-out callbacks (K4)
+    callback request-step-out();  // Request to step out (may show confirmation)
+    callback confirm-step-out();  // Actually step out after confirmation
 
     // Network callbacks
     callback copy-invite();
@@ -98,7 +106,7 @@ export component MainWindow inherits Window {
     callback select-hall(string);
     callback join-with-invite(string);
     callback create-invite(int) -> string;
-    callback leave-hall();
+    callback leave-hall();  // Deprecated - use request-step-out for K4 softer language
 
     // Chat callbacks
     callback load-messages();
@@ -254,6 +262,7 @@ export component MainWindow inherits Window {
                 terminal-send(cmd) => { root.terminal-send(cmd); }
                 files-navigate(path) => { root.files-navigate(path); }
                 files-open(path) => { root.files-open(path); }
+                step-out => { root.request-step-out(); }
             }
 
             EmptyChatPanel {
@@ -378,6 +387,64 @@ export component MainWindow inherits Window {
             }
             close-requested => {
                 root.show-launcher = false;
+            }
+        }
+
+        // Step-out confirmation dialog (K4)
+        if root.show-step-out-confirm: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: #00000066;
+
+            Rectangle {
+                width: 280px;
+                height: root.step-out-warning != "" ? 160px : 120px;
+                background: Theme.color-panel-elevated;
+                border-radius: Theme.radius-md;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+
+                TouchArea {}  // Block clicks through
+
+                VerticalLayout {
+                    padding: Theme.pad-lg;
+                    spacing: Theme.pad-md;
+                    alignment: center;
+
+                    Text {
+                        text: "Step out of this hall?";
+                        color: Theme.color-text;
+                        font-size: Theme.text-md;
+                        font-weight: 500;
+                        horizontal-alignment: center;
+                    }
+
+                    if root.step-out-warning != "": Text {
+                        text: root.step-out-warning;
+                        color: Theme.color-text-muted;
+                        font-size: Theme.text-sm;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.pad-md;
+                        alignment: center;
+
+                        SecondaryButton {
+                            label: "Cancel";
+                            clicked => { root.show-step-out-confirm = false; }
+                        }
+
+                        Button {
+                            label: "Step out";
+                            clicked => {
+                                root.show-step-out-confirm = false;
+                                root.confirm-step-out();
+                            }
+                        }
+                    }
+                }
             }
         }
     }
