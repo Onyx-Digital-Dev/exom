@@ -37,6 +37,7 @@ pub fn setup_member_bindings(window: &MainWindow, state: Arc<AppState>) {
                 is_online: m.is_online,
                 is_host: m.is_host,
                 is_you: current_user_id == Some(m.user_id),
+                activity_hint: state_load.get_activity_hint(m.user_id).into(),
             })
             .collect();
 

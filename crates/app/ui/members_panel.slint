@@ -11,6 +11,7 @@ export struct MemberItem {
     is-online: bool,
     is-host: bool,
     is-you: bool,
+    activity-hint: string,  // "Active", "5m", "2h", etc.
 }
 
 // Chest file data
@@ -207,8 +208,15 @@ export component MembersPanel inherits Rectangle {
                                         subtle: true;
                                     }
 
-                                    // Show offline status
-                                    if !member.is-online: Text {
+                                    // Show activity hint or offline status
+                                    if member.activity-hint != "": Text {
+                                        text: member.activity-hint;
+                                        color: member.activity-hint == "Active" ? Theme.color-online : Theme.color-text-dim;
+                                        font-size: Theme.text-xs;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if !member.is-online && member.activity-hint == "": Text {
                                         text: "(offline)";
                                         color: Theme.color-text-dim;
                                         font-size: Theme.text-xs;

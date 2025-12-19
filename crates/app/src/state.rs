@@ -41,6 +41,8 @@ pub struct AppState {
     pub pending_messages: Arc<Mutex<HashSet<Uuid>>>,
     /// Users currently typing in halls: user_id -> (username, last_typing_time)
     pub typing_users: Arc<Mutex<HashMap<Uuid, (String, Instant)>>>,
+    /// Member last activity timestamps: user_id -> last_active_time
+    pub member_activity: Arc<Mutex<HashMap<Uuid, Instant>>>,
 }
 
 impl AppState {
@@ -65,6 +67,7 @@ impl AppState {
             known_members: Arc::new(Mutex::new(Vec::new())),
             pending_messages: Arc::new(Mutex::new(HashSet::new())),
             typing_users: Arc::new(Mutex::new(HashMap::new())),
+            member_activity: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -269,5 +272,43 @@ impl AppState {
         let before = typing.len();
         typing.retain(|_, (_, instant)| instant.elapsed().as_millis() < max_age_ms as u128);
         typing.len() < before
+    }
+
+    /// Update last activity timestamp for a user
+    pub fn update_member_activity(&self, user_id: Uuid) {
+        self.member_activity
+            .lock()
+            .unwrap()
+            .insert(user_id, Instant::now());
+    }
+
+    /// Get activity hint for a user (e.g., "Active", "5m", "2h", "3d")
+    pub fn get_activity_hint(&self, user_id: Uuid) -> String {
+        let activity = self.member_activity.lock().unwrap();
+        match activity.get(&user_id) {
+            Some(instant) => format_activity_hint(instant.elapsed()),
+            None => String::new(),
+        }
+    }
+
+    /// Clear all activity data (e.g., when switching halls)
+    pub fn clear_member_activity(&self) {
+        self.member_activity.lock().unwrap().clear();
+    }
+}
+
+/// Format elapsed duration as activity hint
+fn format_activity_hint(elapsed: std::time::Duration) -> String {
+    let secs = elapsed.as_secs();
+    if secs < 10 {
+        "Active".to_string()
+    } else if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h", secs / 3600)
+    } else {
+        format!("{}d", secs / 86400)
     }
 }

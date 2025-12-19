@@ -155,6 +155,9 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             let current_hall = state.current_hall_id();
             let current_user = state.current_user_id();
 
+            // Track sender activity
+            state.update_member_activity(net_msg.sender_id);
+
             if let Some(hall_id) = current_hall {
                 // Only store if message is for current hall and not from self
                 if net_msg.hall_id == hall_id
@@ -163,6 +166,8 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
                     store_network_message(state, &net_msg);
                     // Trigger UI refresh
                     window.invoke_load_messages();
+                    // Refresh members to update activity hints
+                    window.invoke_load_members();
                 }
             }
         }
@@ -307,6 +312,9 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             username,
             is_typing,
         } => {
+            // Track user activity on typing
+            state.update_member_activity(user_id);
+
             // Update typing state (exclude self via get_typing_users)
             if is_typing {
                 state.set_user_typing(user_id, username);
@@ -315,6 +323,8 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             }
             // Update typing indicator in UI
             update_typing_indicator(window, state);
+            // Refresh members to update activity hints
+            window.invoke_load_members();
         }
     }
 }
@@ -381,6 +391,7 @@ fn update_network_members(window: &MainWindow, state: &Arc<AppState>, peers: &[P
             is_online: true, // All network peers are online
             is_host: p.is_host,
             is_you: current_user_id == Some(p.user_id),
+            activity_hint: state.get_activity_hint(p.user_id).into(),
         })
         .collect();
 

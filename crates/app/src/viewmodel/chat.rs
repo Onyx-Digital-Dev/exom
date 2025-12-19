@@ -276,6 +276,9 @@ pub fn setup_chat_bindings(
             (username, role)
         };
 
+        // Track own activity
+        state_send.update_member_activity(user_id);
+
         // Store locally
         let db = state_send.db.lock().unwrap();
         if db.messages().create(&message).is_err() {
