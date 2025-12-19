@@ -425,7 +425,7 @@ impl Archivist {
 
         let messages = self.get_messages_in_window(hall_id, &config);
         if messages.is_empty() {
-            return vec![BotAction::EmitSystem {
+            return vec![BotAction::EmitSystemMessage {
                 hall_id,
                 content: "Archive skipped: no messages in time window.".to_string(),
             }];
@@ -455,7 +455,7 @@ impl Archivist {
                 path: path.clone(),
                 contents: markdown,
             },
-            BotAction::EmitSystem {
+            BotAction::EmitSystemMessage {
                 hall_id,
                 content: format!("Archive saved to {}", path),
             },
@@ -501,7 +501,7 @@ impl Archivist {
                 // Run archive immediately
                 let actions = self.run_archive(hall_id);
                 if actions.is_empty() {
-                    Some(vec![BotAction::EmitSystem {
+                    Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Archive failed: no configuration found.".to_string(),
                     }])
@@ -528,7 +528,7 @@ impl Archivist {
                     }
                     None => "Archivist: not configured".to_string(),
                 };
-                Some(vec![BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystemMessage {
                     hall_id,
                     content: status,
                 }])
@@ -537,7 +537,7 @@ impl Archivist {
                 if let Ok(db) = self.db.lock() {
                     let _ = db.archive_config().set_enabled(hall_id, true);
                 }
-                Some(vec![BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystemMessage {
                     hall_id,
                     content: "Archivist enabled.".to_string(),
                 }])
@@ -546,14 +546,14 @@ impl Archivist {
                 if let Ok(db) = self.db.lock() {
                     let _ = db.archive_config().set_enabled(hall_id, false);
                 }
-                Some(vec![BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystemMessage {
                     hall_id,
                     content: "Archivist disabled.".to_string(),
                 }])
             }
             "/set-archive-time" => {
                 if parts.len() < 2 {
-                    return Some(vec![BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Usage: /set-archive-time HHMM (e.g., 2200)".to_string(),
                     }]);
@@ -563,12 +563,12 @@ impl Archivist {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_time(hall_id, time);
                         }
-                        Some(vec![BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystemMessage {
                             hall_id,
                             content: format!("Archive time set to {:04}.", time),
                         }])
                     }
-                    _ => Some(vec![BotAction::EmitSystem {
+                    _ => Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Invalid time. Use HHMM format (0000-2359).".to_string(),
                     }]),
@@ -576,7 +576,7 @@ impl Archivist {
             }
             "/set-archive-window" => {
                 if parts.len() < 2 {
-                    return Some(vec![BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Usage: /set-archive-window 12h|24h".to_string(),
                     }]);
@@ -586,12 +586,12 @@ impl Archivist {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_window(hall_id, window);
                         }
-                        Some(vec![BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystemMessage {
                             hall_id,
                             content: format!("Archive window set to {}.", window.as_str()),
                         }])
                     }
-                    None => Some(vec![BotAction::EmitSystem {
+                    None => Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Invalid window. Use 12h or 24h.".to_string(),
                     }]),
@@ -599,7 +599,7 @@ impl Archivist {
             }
             "/set-archive-output" => {
                 if parts.len() < 2 {
-                    return Some(vec![BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Usage: /set-archive-output chest|chest:username".to_string(),
                     }]);
@@ -609,12 +609,12 @@ impl Archivist {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_output(hall_id, &output);
                         }
-                        Some(vec![BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystemMessage {
                             hall_id,
                             content: format!("Archive output set to {}.", output.as_str()),
                         }])
                     }
-                    None => Some(vec![BotAction::EmitSystem {
+                    None => Some(vec![BotAction::EmitSystemMessage {
                         hall_id,
                         content: "Invalid output. Use chest or chest:username.".to_string(),
                     }]),

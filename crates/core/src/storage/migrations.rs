@@ -203,6 +203,42 @@ const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 8,
+        description: "Add bot registry and per-hall bot configuration",
+        sql: r#"
+            -- Bots enabled per hall with granted capabilities
+            CREATE TABLE IF NOT EXISTS hall_bots (
+                hall_id TEXT NOT NULL,
+                bot_id TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                -- Comma-separated list of granted capabilities (subset of manifest)
+                granted_capabilities TEXT,
+                enabled_at TEXT NOT NULL,
+                enabled_by TEXT,
+                PRIMARY KEY (hall_id, bot_id),
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE,
+                FOREIGN KEY (enabled_by) REFERENCES users(id)
+            );
+
+            -- Per-hall bot configuration overrides
+            CREATE TABLE IF NOT EXISTS hall_bot_config (
+                hall_id TEXT NOT NULL,
+                bot_id TEXT NOT NULL,
+                -- JSON object with config key-value pairs
+                config_json TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL,
+                updated_by TEXT,
+                PRIMARY KEY (hall_id, bot_id),
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE,
+                FOREIGN KEY (updated_by) REFERENCES users(id)
+            );
+
+            -- Index for quick lookups
+            CREATE INDEX IF NOT EXISTS idx_hall_bots_bot ON hall_bots(bot_id);
+            CREATE INDEX IF NOT EXISTS idx_hall_bot_config_bot ON hall_bot_config(bot_id);
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

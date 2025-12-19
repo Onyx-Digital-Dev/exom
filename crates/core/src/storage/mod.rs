@@ -1,6 +1,7 @@
 //! SQLite storage layer for Exom
 
 mod archive;
+mod bot_config;
 mod connections;
 mod halls;
 mod invites;
@@ -25,6 +26,7 @@ use std::path::Path;
 use tracing::instrument;
 
 pub use archive::{ArchiveConfig, ArchiveConfigStore, ArchiveOutput, ArchiveWindow};
+pub use bot_config::{BotConfigStore, HallBot, HallBotConfig};
 pub use connections::{ConnectionStore, LastConnection};
 pub use halls::HallStore;
 pub use invites::InviteStore;
@@ -119,6 +121,11 @@ impl Database {
     /// Get archive config store for Archivist bot
     pub fn archive_config(&self) -> ArchiveConfigStore<'_> {
         ArchiveConfigStore::new(&self.conn)
+    }
+
+    /// Get bot config store for per-hall bot management
+    pub fn bot_config(&self) -> BotConfigStore<'_> {
+        BotConfigStore::new(&self.conn)
     }
 }
 

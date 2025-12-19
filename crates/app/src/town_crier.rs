@@ -145,7 +145,7 @@ impl Bot for TownCrier {
                 // Update last_seen for next time
                 self.update_last_seen(*hall_id, *user_id);
 
-                vec![BotAction::EmitSystem {
+                vec![BotAction::EmitSystemMessage {
                     hall_id: *hall_id,
                     content: message,
                 }]
@@ -166,13 +166,13 @@ impl Bot for TownCrier {
                 // Generate message
                 let message = self.leave_message(username);
 
-                vec![BotAction::EmitSystem {
+                vec![BotAction::EmitSystemMessage {
                     hall_id: *hall_id,
                     content: message,
                 }]
             }
-            // Town Crier doesn't handle scheduled ticks or hall connected
-            BotEvent::ScheduledTick { .. } | BotEvent::HallConnected { .. } => Vec::new(),
+            // Town Crier doesn't handle other events
+            _ => Vec::new(),
         }
     }
 }

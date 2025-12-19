@@ -76,7 +76,7 @@ impl BotRuntime {
     /// Execute a bot action with capability enforcement
     fn execute_action(&self, bot_id: String, action: &BotAction) {
         match action {
-            BotAction::EmitSystem { hall_id, content } => {
+            BotAction::EmitSystemMessage { hall_id, content } => {
                 // Add ephemeral system message
                 self.state.add_system_message(*hall_id, content.clone());
                 tracing::debug!(
@@ -110,6 +110,14 @@ impl BotRuntime {
                         );
                     }
                 }
+            }
+            // Other actions not yet implemented
+            _ => {
+                tracing::debug!(
+                    bot_id = %bot_id,
+                    action = ?action,
+                    "Bot action not yet implemented"
+                );
             }
         }
     }
