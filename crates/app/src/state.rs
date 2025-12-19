@@ -182,30 +182,30 @@ impl AppState {
             .retain(|m| m.hall_id != hall_id);
     }
 
-    /// Update known members and return (joined, left) usernames
+    /// Update known members and return (joined, left) as TrackedMember structs
     pub fn update_known_members(
         &self,
         new_members: Vec<TrackedMember>,
-    ) -> (Vec<String>, Vec<String>) {
+    ) -> (Vec<TrackedMember>, Vec<TrackedMember>) {
         let mut known = self.known_members.lock().unwrap();
         let my_user_id = self.current_user_id();
 
         // Find who joined (in new but not in known)
-        let joined: Vec<String> = new_members
+        let joined: Vec<TrackedMember> = new_members
             .iter()
             .filter(|m| {
                 !known.iter().any(|k| k.user_id == m.user_id) && my_user_id != Some(m.user_id)
             })
-            .map(|m| m.username.clone())
+            .cloned()
             .collect();
 
         // Find who left (in known but not in new)
-        let left: Vec<String> = known
+        let left: Vec<TrackedMember> = known
             .iter()
             .filter(|k| {
                 !new_members.iter().any(|m| m.user_id == k.user_id) && my_user_id != Some(k.user_id)
             })
-            .map(|k| k.username.clone())
+            .cloned()
             .collect();
 
         // Update known members

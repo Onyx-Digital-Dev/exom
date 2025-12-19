@@ -172,6 +172,21 @@ const MIGRATIONS: &[Migration] = &[
             );
         "#,
     },
+    Migration {
+        version: 6,
+        description: "Add last_seen tracking for Town Crier bot",
+        sql: r#"
+            -- Track when users were last seen in each hall
+            CREATE TABLE IF NOT EXISTS last_seen (
+                hall_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                PRIMARY KEY (hall_id, user_id),
+                FOREIGN KEY (hall_id) REFERENCES halls(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        "#,
+    },
 ];
 
 /// Initialize the migrations table

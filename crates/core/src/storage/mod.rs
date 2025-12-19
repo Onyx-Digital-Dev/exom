@@ -3,6 +3,7 @@
 mod connections;
 mod halls;
 mod invites;
+mod last_seen;
 mod messages;
 mod migrations;
 mod parse;
@@ -25,6 +26,7 @@ use tracing::instrument;
 pub use connections::{ConnectionStore, LastConnection};
 pub use halls::HallStore;
 pub use invites::InviteStore;
+pub use last_seen::{LastSeen, LastSeenStore};
 pub use messages::MessageStore;
 pub use preferences::{PreferencesStore, UserPreferences};
 pub use traits::{HallRepository, InviteRepository, MessageRepository, Storage, UserRepository};
@@ -105,6 +107,11 @@ impl Database {
     /// Get preferences store for user settings
     pub fn preferences(&self) -> PreferencesStore<'_> {
         PreferencesStore::new(&self.conn)
+    }
+
+    /// Get last seen store for Town Crier bot
+    pub fn last_seen(&self) -> LastSeenStore<'_> {
+        LastSeenStore::new(&self.conn)
     }
 }
 

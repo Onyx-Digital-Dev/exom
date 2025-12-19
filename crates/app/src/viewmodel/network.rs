@@ -9,6 +9,7 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 
 use tokio::sync::Mutex;
 
+use crate::bot_runtime::BotRuntime;
 use crate::network::{
     ConnectionInfo, ConnectionQuality, NetworkEvent, NetworkManager, NetworkState,
 };
@@ -26,11 +27,13 @@ pub fn setup_network_bindings(
     window: &MainWindow,
     state: Arc<AppState>,
     network_manager: Arc<Mutex<NetworkManager>>,
+    bot_runtime: Arc<std::sync::Mutex<BotRuntime>>,
 ) {
     // Poll for network events periodically
     let window_weak = window.as_weak();
     let network_manager_clone = network_manager.clone();
     let state_clone = state.clone();
+    let bot_runtime_clone = bot_runtime.clone();
 
     // Set up a timer to poll network events
     let timer = slint::Timer::default();
@@ -40,6 +43,7 @@ pub fn setup_network_bindings(
         move || {
             let window_weak = window_weak.clone();
             let state_clone = state_clone.clone();
+            let bot_runtime_clone = bot_runtime_clone.clone();
 
             // Collect events while holding lock, then process
             let events: Vec<NetworkEvent> = {
@@ -57,7 +61,7 @@ pub fn setup_network_bindings(
             // Process events after releasing lock
             for event in events {
                 if let Some(window) = window_weak.upgrade() {
-                    handle_network_event(&window, &state_clone, &network_manager_clone, event);
+                    handle_network_event(&window, &state_clone, &network_manager_clone, &bot_runtime_clone, event);
                 }
             }
         },
@@ -142,6 +146,7 @@ fn handle_network_event(
     window: &MainWindow,
     state: &Arc<AppState>,
     network_manager: &Arc<Mutex<NetworkManager>>,
+    bot_runtime: &Arc<std::sync::Mutex<BotRuntime>>,
     event: NetworkEvent,
 ) {
     match event {
@@ -203,13 +208,15 @@ fn handle_network_event(
             let (joined, left) = state.update_known_members(tracked);
             let has_changes = !joined.is_empty() || !left.is_empty();
 
-            // Add system messages for joins/leaves
+            // Dispatch presence events to bot runtime (Town Crier)
             if let Some(hall_id) = state.current_hall_id() {
-                for name in joined {
-                    state.add_system_message(hall_id, format!("{} joined the hall", name));
-                }
-                for name in left {
-                    state.add_system_message(hall_id, format!("{} left the hall", name));
+                if let Ok(mut runtime) = bot_runtime.try_lock() {
+                    for member in joined {
+                        runtime.on_member_joined(hall_id, member.user_id, member.username);
+                    }
+                    for member in left {
+                        runtime.on_member_left(hall_id, member.user_id, member.username);
+                    }
                 }
             }
 
