@@ -1,11 +1,12 @@
 //! Bot runtime - manages bot lifecycle and event dispatch
 //!
 //! Minimal runtime for first-party bots. Capability enforcement happens here.
+//! Bots interact with Exom only through the skeleton defined in exom_core::bot.
 
 use std::sync::Arc;
 
 use chrono::Local;
-use exom_core::{Bot, BotAction, BotEvent};
+use exom_core::{Bot, BotAction, BotCapability, BotEvent};
 use uuid::Uuid;
 
 use crate::archivist::Archivist;
@@ -16,8 +17,6 @@ use crate::town_crier::TownCrier;
 pub struct BotRuntime {
     bots: Vec<Box<dyn Bot>>,
     state: Arc<AppState>,
-    /// Index of Archivist bot for command handling
-    archivist_index: Option<usize>,
     /// Last scheduled tick time (to avoid duplicate ticks in same minute)
     last_tick_minute: Option<(u16, u16)>, // (hour * 100 + minute, day)
 }
@@ -28,19 +27,12 @@ impl BotRuntime {
         let mut runtime = Self {
             bots: Vec::new(),
             state: state.clone(),
-            archivist_index: None,
             last_tick_minute: None,
         };
 
-        // Register Town Crier as built-in bot
-        let town_crier = TownCrier::new(state.db.clone());
-        runtime.register_bot(Box::new(town_crier));
-
-        // Register Archivist as built-in bot
-        let archivist = Archivist::new(state.db.clone());
-        let archivist_idx = runtime.bots.len();
-        runtime.register_bot(Box::new(archivist));
-        runtime.archivist_index = Some(archivist_idx);
+        // Register built-in bots
+        runtime.register_bot(Box::new(TownCrier::new(state.db.clone())));
+        runtime.register_bot(Box::new(Archivist::new(state.db.clone())));
 
         runtime
     }
@@ -159,21 +151,35 @@ impl BotRuntime {
     /// Handle a potential slash command from chat
     /// Returns true if the message was a command that was handled
     pub fn handle_command(&mut self, hall_id: Uuid, user_id: Uuid, message: &str) -> bool {
-        // Check if it's an archive command
-        if message.starts_with("/archive") || message.starts_with("/set-archive") {
-            if let Some(idx) = self.archivist_index {
-                // Get archivist and handle command
-                if let Some(archivist) = self.bots.get_mut(idx) {
-                    // Downcast to Archivist
-                    if let Some(archivist) = archivist.as_any_mut().downcast_mut::<Archivist>() {
-                        if let Some(action) = archivist.handle_command(hall_id, message, user_id) {
-                            self.execute_action("archivist".to_string(), &action);
-                            return true;
-                        }
-                    }
+        // Only process slash commands
+        if !message.starts_with('/') {
+            return false;
+        }
+
+        // Try each bot that can handle commands
+        for bot in &mut self.bots {
+            // Check if bot has HandleCommands capability
+            if !bot.has_capability(BotCapability::HandleCommands) {
+                continue;
+            }
+
+            // Check if this bot's prefixes match
+            let prefixes = bot.command_prefixes();
+            let matches = prefixes.iter().any(|p| message.starts_with(p));
+            if !matches {
+                continue;
+            }
+
+            // Try to handle the command
+            if let Some(actions) = bot.handle_command(hall_id, user_id, message) {
+                let bot_id = bot.manifest().id.clone();
+                for action in actions {
+                    self.execute_action(bot_id.clone(), &action);
                 }
+                return true;
             }
         }
+
         false
     }
 
@@ -201,48 +207,10 @@ impl BotRuntime {
         self.dispatch(&event);
     }
 
-    /// Check for missed archive runs and catch up
-    /// Called on app startup
-    pub fn check_missed_runs(&mut self, hall_id: Uuid) {
-        // Get archive config for hall
-        let config = {
-            let db = self.state.db.lock().unwrap();
-            db.archive_config().get(hall_id).ok().flatten()
-        };
-
-        if let Some(config) = config {
-            if !config.enabled {
-                return;
-            }
-
-            // Check if we missed a run
-            if let Some(last_run) = config.last_run_at {
-                let now = chrono::Utc::now();
-                let hours_since = (now - last_run).num_hours();
-
-                // If more than 25 hours since last run, we missed one
-                if hours_since > 25 {
-                    tracing::info!(
-                        hall_id = %hall_id,
-                        hours_since = hours_since,
-                        "Catching up missed archive run"
-                    );
-
-                    // Trigger archive now
-                    if let Some(idx) = self.archivist_index {
-                        if let Some(archivist) = self.bots.get_mut(idx) {
-                            if let Some(archivist) = archivist.as_any_mut().downcast_mut::<Archivist>()
-                            {
-                                if let Some(action) =
-                                    archivist.handle_command(hall_id, "/archive-now", Uuid::nil())
-                                {
-                                    self.execute_action("archivist".to_string(), &action);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    /// Notify bots that a hall has been connected
+    /// Bots can use this for startup tasks (e.g., checking missed runs)
+    pub fn on_hall_connected(&mut self, hall_id: Uuid) {
+        let event = BotEvent::HallConnected { hall_id };
+        self.dispatch(&event);
     }
 }

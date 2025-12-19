@@ -319,9 +319,9 @@ fn handle_network_event(
                     window.invoke_load_messages();
                 }
 
-                // Check for missed archive runs and catch up
+                // Notify bots that hall is connected (for startup tasks like missed runs check)
                 if let Ok(mut runtime) = bot_runtime.try_lock() {
-                    runtime.check_missed_runs(hall_id);
+                    runtime.on_hall_connected(hall_id);
                 }
             }
         }

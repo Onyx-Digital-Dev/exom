@@ -3,7 +3,6 @@
 //! Creates markdown summaries of chat activity. No LLM, no AI - just
 //! deterministic extractive summarization using simple sentence scoring.
 
-use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -323,6 +322,7 @@ impl Archivist {
                     BotCapability::ReadChatHistory,
                     BotCapability::WriteChest,
                     BotCapability::ReceiveScheduledTick,
+                    BotCapability::HandleCommands,
                 ],
             },
             db,
@@ -462,13 +462,35 @@ impl Archivist {
         ]
     }
 
-    /// Handle an archive command
-    pub fn handle_command(
-        &mut self,
-        hall_id: Uuid,
-        command: &str,
-        _user_id: Uuid,
-    ) -> Option<BotAction> {
+    /// Check for missed archive runs on hall connect
+    fn check_missed_runs(&mut self, hall_id: Uuid) -> Vec<BotAction> {
+        let config = match self.get_config(hall_id) {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+
+        if !config.enabled {
+            return Vec::new();
+        }
+
+        // Check if we missed a run (>25 hours since last run)
+        if let Some(last_run) = config.last_run_at {
+            let hours_since = (Utc::now() - last_run).num_hours();
+            if hours_since > 25 {
+                tracing::info!(
+                    hall_id = %hall_id,
+                    hours_since = hours_since,
+                    "Catching up missed archive run"
+                );
+                return self.run_archive(hall_id);
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Handle an archive command (internal implementation)
+    fn handle_command_impl(&mut self, hall_id: Uuid, command: &str) -> Option<Vec<BotAction>> {
         let parts: Vec<&str> = command.trim().split_whitespace().collect();
         if parts.is_empty() {
             return None;
@@ -479,13 +501,12 @@ impl Archivist {
                 // Run archive immediately
                 let actions = self.run_archive(hall_id);
                 if actions.is_empty() {
-                    Some(BotAction::EmitSystem {
+                    Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Archive failed: no configuration found.".to_string(),
-                    })
+                    }])
                 } else {
-                    // Return first action (the others will be lost, but that's ok for /archive-now)
-                    actions.into_iter().next()
+                    Some(actions)
                 }
             }
             "/archive-status" => {
@@ -507,96 +528,96 @@ impl Archivist {
                     }
                     None => "Archivist: not configured".to_string(),
                 };
-                Some(BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystem {
                     hall_id,
                     content: status,
-                })
+                }])
             }
             "/archive-enable" => {
                 if let Ok(db) = self.db.lock() {
                     let _ = db.archive_config().set_enabled(hall_id, true);
                 }
-                Some(BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystem {
                     hall_id,
                     content: "Archivist enabled.".to_string(),
-                })
+                }])
             }
             "/archive-disable" => {
                 if let Ok(db) = self.db.lock() {
                     let _ = db.archive_config().set_enabled(hall_id, false);
                 }
-                Some(BotAction::EmitSystem {
+                Some(vec![BotAction::EmitSystem {
                     hall_id,
                     content: "Archivist disabled.".to_string(),
-                })
+                }])
             }
             "/set-archive-time" => {
                 if parts.len() < 2 {
-                    return Some(BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Usage: /set-archive-time HHMM (e.g., 2200)".to_string(),
-                    });
+                    }]);
                 }
                 match parts[1].parse::<u16>() {
                     Ok(time) if time < 2400 => {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_time(hall_id, time);
                         }
-                        Some(BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystem {
                             hall_id,
                             content: format!("Archive time set to {:04}.", time),
-                        })
+                        }])
                     }
-                    _ => Some(BotAction::EmitSystem {
+                    _ => Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Invalid time. Use HHMM format (0000-2359).".to_string(),
-                    }),
+                    }]),
                 }
             }
             "/set-archive-window" => {
                 if parts.len() < 2 {
-                    return Some(BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Usage: /set-archive-window 12h|24h".to_string(),
-                    });
+                    }]);
                 }
                 match ArchiveWindow::from_str(parts[1]) {
                     Some(window) => {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_window(hall_id, window);
                         }
-                        Some(BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystem {
                             hall_id,
                             content: format!("Archive window set to {}.", window.as_str()),
-                        })
+                        }])
                     }
-                    None => Some(BotAction::EmitSystem {
+                    None => Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Invalid window. Use 12h or 24h.".to_string(),
-                    }),
+                    }]),
                 }
             }
             "/set-archive-output" => {
                 if parts.len() < 2 {
-                    return Some(BotAction::EmitSystem {
+                    return Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Usage: /set-archive-output chest|chest:username".to_string(),
-                    });
+                    }]);
                 }
                 match ArchiveOutput::from_str(parts[1]) {
                     Some(output) => {
                         if let Ok(db) = self.db.lock() {
                             let _ = db.archive_config().set_output(hall_id, &output);
                         }
-                        Some(BotAction::EmitSystem {
+                        Some(vec![BotAction::EmitSystem {
                             hall_id,
                             content: format!("Archive output set to {}.", output.as_str()),
-                        })
+                        }])
                     }
-                    None => Some(BotAction::EmitSystem {
+                    None => Some(vec![BotAction::EmitSystem {
                         hall_id,
                         content: "Invalid output. Use chest or chest:username.".to_string(),
-                    }),
+                    }]),
                 }
             }
             _ => None,
@@ -607,10 +628,6 @@ impl Archivist {
 impl Bot for Archivist {
     fn manifest(&self) -> &BotManifest {
         &self.manifest
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 
     fn on_event(&mut self, event: &BotEvent) -> Vec<BotAction> {
@@ -627,9 +644,26 @@ impl Bot for Archivist {
                     Vec::new()
                 }
             }
+            BotEvent::HallConnected { hall_id } => {
+                // Check for missed archive runs on connect
+                self.check_missed_runs(*hall_id)
+            }
             // Archivist doesn't handle presence events
             _ => Vec::new(),
         }
+    }
+
+    fn handle_command(
+        &mut self,
+        hall_id: Uuid,
+        _user_id: Uuid,
+        command: &str,
+    ) -> Option<Vec<BotAction>> {
+        self.handle_command_impl(hall_id, command)
+    }
+
+    fn command_prefixes(&self) -> &[&str] {
+        &["/archive", "/set-archive"]
     }
 }
 

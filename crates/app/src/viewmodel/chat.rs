@@ -257,10 +257,9 @@ pub fn setup_chat_bindings(
         };
 
         // Check for slash commands before treating as a regular message
-        if content.starts_with("/archive") || content.starts_with("/set-archive") {
+        if content.starts_with('/') {
             if let Ok(mut runtime) = bot_runtime_send.try_lock() {
-                let handled = runtime.handle_command(hall_id, user_id, &content);
-                if handled {
+                if runtime.handle_command(hall_id, user_id, &content) {
                     // Reload messages to show system response
                     if let Some(w) = window_weak.upgrade() {
                         w.invoke_load_messages();

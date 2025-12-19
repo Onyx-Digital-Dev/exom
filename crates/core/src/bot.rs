@@ -1,8 +1,13 @@
 //! Bot system types and runtime
 //!
 //! Minimal bot spine for first-party bots. No WASM yet - just native Rust bots.
-
-use std::any::Any;
+//!
+//! Bots interact with Exom only through this skeleton:
+//! - Events: what bots can listen to
+//! - Actions: what bots can do
+//! - Commands: slash commands bots can handle
+//!
+//! The app owns UI, networking, storage, scheduling. Bots never touch those directly.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -20,6 +25,8 @@ pub enum BotCapability {
     WriteChest,
     /// Receive scheduled tick events
     ReceiveScheduledTick,
+    /// Handle slash commands
+    HandleCommands,
 }
 
 /// Bot manifest - describes a bot's identity and capabilities
@@ -58,6 +65,11 @@ pub enum BotEvent {
         /// Current local time as HHMM (e.g., 2200 for 10 PM)
         current_time_hhmm: u16,
     },
+    /// Hall connected - fired when app connects to a hall
+    /// Bots can use this for startup tasks (e.g., checking missed runs)
+    HallConnected {
+        hall_id: Uuid,
+    },
 }
 
 impl BotEvent {
@@ -67,7 +79,9 @@ impl BotEvent {
             BotEvent::MemberJoined { .. } | BotEvent::MemberLeft { .. } => {
                 BotCapability::ListenPresence
             }
-            BotEvent::ScheduledTick { .. } => BotCapability::ReceiveScheduledTick,
+            BotEvent::ScheduledTick { .. } | BotEvent::HallConnected { .. } => {
+                BotCapability::ReceiveScheduledTick
+            }
         }
     }
 }
@@ -105,8 +119,24 @@ pub trait Bot: Send + Sync {
     /// Handle an event and return any actions
     fn on_event(&mut self, event: &BotEvent) -> Vec<BotAction>;
 
-    /// Enable downcasting for specific bot types
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+    /// Handle a slash command. Returns Some(actions) if this bot handles the command,
+    /// None if the command is not for this bot.
+    ///
+    /// Requires HandleCommands capability to be called.
+    fn handle_command(
+        &mut self,
+        _hall_id: Uuid,
+        _user_id: Uuid,
+        _command: &str,
+    ) -> Option<Vec<BotAction>> {
+        None
+    }
+
+    /// Return command prefixes this bot handles (e.g., ["/archive", "/set-archive"])
+    /// Used by BotRuntime to route commands efficiently.
+    fn command_prefixes(&self) -> &[&str] {
+        &[]
+    }
 
     /// Check if this bot has a capability
     fn has_capability(&self, cap: BotCapability) -> bool {
