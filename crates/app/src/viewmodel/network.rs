@@ -9,7 +9,7 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 
 use tokio::sync::Mutex;
 
-use crate::network::{ConnectionInfo, NetworkEvent, NetworkManager, NetworkState};
+use crate::network::{ConnectionInfo, ConnectionQuality, NetworkEvent, NetworkManager, NetworkState};
 use crate::state::{AppState, TrackedMember};
 use crate::MainWindow;
 use crate::MemberItem;
@@ -217,6 +217,8 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             state.clear_all_typing();
             update_typing_indicator(window, state);
             set_network_status(window, "Disconnected", false);
+            // Clear connection quality
+            window.set_connection_quality("".into());
             // Reload members from local database
             window.invoke_load_members();
         }
@@ -325,6 +327,14 @@ fn handle_network_event(window: &MainWindow, state: &Arc<AppState>, event: Netwo
             update_typing_indicator(window, state);
             // Refresh members to update activity hints
             window.invoke_load_members();
+        }
+        NetworkEvent::QualityChanged(quality) => {
+            let hint = match quality {
+                ConnectionQuality::Good => "Good",
+                ConnectionQuality::Ok => "OK",
+                ConnectionQuality::Poor => "Poor",
+            };
+            window.set_connection_quality(hint.into());
         }
     }
 }

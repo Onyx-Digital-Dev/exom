@@ -24,6 +24,17 @@ pub enum NetworkState {
     Reconnecting,
 }
 
+/// Connection quality based on RTT
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionQuality {
+    /// RTT < 80ms
+    Good,
+    /// RTT 80-200ms
+    Ok,
+    /// RTT > 200ms or missed pings
+    Poor,
+}
+
 /// Connection info for persistence and reconnect
 #[derive(Debug, Clone)]
 pub struct ConnectionInfo {
@@ -73,6 +84,8 @@ pub enum NetworkEvent {
     ConnectedTo { addr: String },
     /// Reconnect retry status
     ReconnectRetry { attempt: u32, next_in_secs: u64 },
+    /// Connection quality changed
+    QualityChanged(ConnectionQuality),
 }
 
 /// Network manager handle
@@ -102,6 +115,12 @@ struct NetworkManagerState {
     token: Option<String>,
     /// Last known member list (for election)
     members: Vec<PeerInfo>,
+    /// RTT samples for quality calculation (last 5)
+    rtt_samples: Vec<u64>,
+    /// Current connection quality
+    quality: Option<ConnectionQuality>,
+    /// Last ping sent time
+    last_ping_sent: Option<std::time::Instant>,
 }
 
 enum NetworkCommand {
@@ -158,6 +177,9 @@ impl NetworkManager {
             cancel_reconnect: false,
             token: None,
             members: Vec::new(),
+            rtt_samples: Vec::new(),
+            quality: None,
+            last_ping_sent: None,
         }));
 
         // Spawn the network task
@@ -310,12 +332,17 @@ impl Default for NetworkManager {
 const RECONNECT_DELAYS_MS: &[u64] = &[1000, 2000, 5000, 10000, 30000];
 
 /// Main network task
+/// Ping interval for RTT measurement (3 seconds)
+const PING_INTERVAL_MS: u64 = 3000;
+
 async fn network_task(
     state: Arc<RwLock<NetworkManagerState>>,
     event_tx: mpsc::Sender<NetworkEvent>,
     mut cmd_rx: mpsc::Receiver<NetworkCommand>,
 ) {
     let mut client: Option<Client> = None;
+    let mut ping_interval = tokio::time::interval(std::time::Duration::from_millis(PING_INTERVAL_MS));
+    ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
@@ -459,6 +486,18 @@ async fn network_task(
                     // Client disconnected
                     handle_client_disconnected(&state, &event_tx).await;
                     client = None;
+                }
+            }
+
+            // Periodic ping for RTT measurement (only when connected as client)
+            _ = ping_interval.tick() => {
+                if let Some(ref c) = client {
+                    // Record ping send time
+                    {
+                        let mut s = state.write().await;
+                        s.last_ping_sent = Some(std::time::Instant::now());
+                    }
+                    let _ = c.ping().await;
                 }
             }
         }
@@ -1056,6 +1095,39 @@ async fn handle_client_event(
                     is_typing,
                 })
                 .await;
+        }
+        ServerEvent::PongReceived => {
+            // Calculate RTT from last ping
+            let mut s = state.write().await;
+            if let Some(ping_time) = s.last_ping_sent.take() {
+                let rtt_ms = ping_time.elapsed().as_millis() as u64;
+                debug!(rtt_ms = rtt_ms, "Pong received");
+
+                // Keep last 5 samples
+                s.rtt_samples.push(rtt_ms);
+                if s.rtt_samples.len() > 5 {
+                    s.rtt_samples.remove(0);
+                }
+
+                // Calculate average RTT
+                let avg_rtt = s.rtt_samples.iter().sum::<u64>() / s.rtt_samples.len() as u64;
+
+                // Determine quality
+                let new_quality = if avg_rtt < 80 {
+                    ConnectionQuality::Good
+                } else if avg_rtt <= 200 {
+                    ConnectionQuality::Ok
+                } else {
+                    ConnectionQuality::Poor
+                };
+
+                // Only emit event if quality changed
+                if s.quality != Some(new_quality) {
+                    s.quality = Some(new_quality);
+                    drop(s);
+                    let _ = event_tx.send(NetworkEvent::QualityChanged(new_quality)).await;
+                }
+            }
         }
     }
 }

@@ -58,6 +58,7 @@ export component MainWindow inherits Window {
     in-out property <string> network-status: "Working offline";
     in-out property <bool> is-network-connected: false;
     in-out property <string> invite-url: "";
+    in-out property <string> connection-quality: "";  // "Good", "OK", "Poor", or ""
 
     // Typing indicator
     in-out property <string> typing-indicator: "";
@@ -144,6 +145,15 @@ export component MainWindow inherits Window {
                 Text {
                     text: root.network-status;
                     color: Theme.color-text-muted;
+                    font-size: Theme.text-xs;
+                    vertical-alignment: center;
+                }
+
+                // Connection quality (only when connected and quality available)
+                if root.is-network-connected && root.connection-quality != "": Text {
+                    text: "(" + root.connection-quality + ")";
+                    color: root.connection-quality == "Good" ? Theme.color-online :
+                           (root.connection-quality == "OK" ? Theme.color-text-muted : Theme.color-text-dim);
                     font-size: Theme.text-xs;
                     vertical-alignment: center;
                 }

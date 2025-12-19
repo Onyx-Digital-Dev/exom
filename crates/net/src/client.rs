@@ -77,6 +77,8 @@ pub enum ServerEvent {
         username: String,
         is_typing: bool,
     },
+    /// Pong received (for RTT measurement)
+    PongReceived,
 }
 
 /// Client handle for network operations
@@ -416,6 +418,7 @@ async fn handle_server_message(
         }
         Message::Pong => {
             debug!("Received pong");
+            let _ = event_tx.send(ServerEvent::PongReceived).await;
         }
         Message::HostHeartbeat {
             hall_id: _,
